@@ -1,3 +1,7 @@
+declare const process: {
+  env: Record<string, string | undefined>;
+};
+
 export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
     res.status(200).end();
