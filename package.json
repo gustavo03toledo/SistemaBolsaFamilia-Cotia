@@ -1,0 +1,21 @@
+{
+  "name": "sbf-panorama",
+  "version": "2.23.0",
+  "private": true,
+  "description": "Frontend React + Serverless Proxy (Vercel) para o Sistema de Conferência de Frequência Escolar do Bolsa Família.",
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "build": "npm --prefix web install && npm --prefix web run build",
+    "preview": "npm --prefix web run preview",
+    "clasp:login": "clasp login",
+    "clasp:user": "clasp show-authorized-user",
+    "clasp:status": "clasp status",
+    "clasp:pull": "clasp pull",
+    "clasp:push": "clasp push",
+    "clasp:version": "clasp version \"Conferencia Bolsa Familia\"",
+    "clasp:deploy": "clasp deploy -d \"Conferencia Bolsa Familia\""
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.0.6-alpha"
+  }
+}

@@ -1,0 +1,53 @@
+# ==============================================================================
+# SBF PANORAMA — .gitignore (Apenas Frontend no GitHub)
+# ==============================================================================
+
+# Variáveis de ambiente reais e credenciais locais (NUNCA versionar)
+.env
+.env.*
+!.env.example
+web/.env
+web/.env.*
+!web/.env.example
+.clasp.json
+.claspignore
+oauth-clasp.json
+*.credentials.json
+*.secret.json
+
+# Arquivos do Backend Google Apps Script (mantidos localmente para clasp, fora do GitHub)
+*.gs
+PAGE_Index.html
+appsscript.json
+
+# Documentação interna e relatórios de desenvolvimento
+CONTEXT.MD
+docs/
+RELATORIO_MVP2.md
+PLANO_DE_ACAO_MVPS.md
+.agents/
+.codex/
+scripts/
+
+# Amostras e dados sensíveis de alunos
+amostras/
+*.pdf
+*.xlsx
+*.xls
+*.csv
+
+# Dependências e builds locais
+node_modules/
+package-lock.json
+.npm/
+web/node_modules/
+web/package-lock.json
+web/dist/
+.vercel/
+
+# Arquivos temporários
+*.log
+*.tmp
+*.bak
+*.tsbuildinfo
+~$*
