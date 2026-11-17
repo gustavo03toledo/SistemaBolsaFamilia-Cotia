@@ -108,6 +108,14 @@ export const gasApi = {
     callGasApi('OBTER_DADOS_CICLO', { abaCiclo, modoCompacto }),
   buscarRevisaoAssistida: (dadosBusca: Record<string, any>) =>
     callGasApi('BUSCAR_REVISAO_ASSISTIDA', dadosBusca),
+  buscarDadosDeclaracaoAluno: (dadosBusca: {
+    nomeAluno?: string;
+    turma?: string;
+    serie?: string;
+    numeroChamada?: string;
+    arquivoId?: string;
+    anoReferencia?: number;
+  }) => callGasApi('BUSCAR_DADOS_DECLARACAO_ALUNO', dadosBusca),
   confirmarCorrecao: (dadosCorrecao: Record<string, any>) =>
     callGasApi('CONFIRMAR_CORRECAO', dadosCorrecao),
   salvarAjusteFrequencia: (dados: Record<string, any>) =>
