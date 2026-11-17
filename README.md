@@ -1,27 +1,33 @@
 # SBF Panorama — Sistema de Conferência de Frequência Escolar do Bolsa Família
 
-Aplicação web moderna em **React + TypeScript + Tailwind CSS** (hospedada na **Vercel**) integrada via Proxy Serverless (`/api/gas`) a um backend em **Google Apps Script + Google Sheets + Google Drive**, projetada para automatizar a conferência bimestral de frequência escolar dos estudantes beneficiários do Programa Bolsa Família.
+Aplicação web moderna em **React + TypeScript + Tailwind CSS** (hospedada na **Vercel**) integrada via Proxy Serverless (`/api/gas`) a um backend em **Google Apps Script + Google Sheets + Google Drive**, projetada para automatizar a conferência bimestral de frequência escolar e a emissão de declarações oficiais para os estudantes beneficiários do Programa Bolsa Família.
 
 ---
 
 ## Visão Geral
 
-O processo manual de conferência do Bolsa Família nas secretarias escolares exige abrir dezenas de diários de classe (`.xlsx` / Google Sheets), localizar cada estudante listado no formulário oficial (`.pdf`), verificar transferências ou remanejamentos, somar presenças e faltas dentro do intervalo de datas de cada mês do ciclo e justificar frequências abaixo do mínimo exigido (**60%** para Educação Infantil e **75%** para Ensino Fundamental).
+O processo manual de conferência do Bolsa Família nas secretarias escolares exige abrir dezenas de diários de classe (`.xlsx` / Google Sheets), localizar cada estudante listado no formulário oficial (`.pdf`), verificar transferências ou remanejamentos, somar presenças e faltas dentro do intervalo de datas de cada mês do ciclo e justificar frequências abaixo do mínimo exigido (**60%** para Educação Infantil e **75%** para Ensino Fundamental). Além disso, a secretaria atende frequentemente a solicitações de declarações de frequência detalhadas com faltas mês a mês solicitadas pelo **CRAS** e por órgãos de assistência social.
 
-O **SBF Panorama** transforma essa operação em um fluxo digital auditável, rápido e assistido:
+O **SBF Panorama** transforma toda essa rotina em um fluxo digital ágil, auditável e assistido:
 
 1. **Conexão Direta à Pasta de Diários (Google Drive)**:
    - Aceita o link ou ID da pasta dos diários pelo Frontend e realiza a varredura recursiva das turmas, separando automaticamente **Educação Infantil (limite 60%)** e **Ensino Fundamental 1º ao 5º Ano (limite 75%)**.
 2. **Pré-aquecimento do Índice de Alunos (`Indice Alunos Diarios`)**:
-   - Indexa previamente os alunos das turmas em lotes, permitindo calcular a frequência apenas dos candidatos relevantes para o PDF enviado.
+   - Indexa previamente os alunos das turmas em lotes, permitindo calcular a frequência apenas dos candidatos relevantes para o PDF enviado e acelerando o processamento em até 80%.
 3. **Extração Instantânea do PDF no Navegador (`pdfjs-dist`)**:
    - Lê o PDF oficial do Bolsa Família diretamente no cliente em menos de 1 segundo, exibindo prévia imediata de `Nome`, `Data de Nascimento`, `NIS` e `Responsável Familiar` antes de iniciar a conferência.
 4. **Mesa de Conferência por Ciclo Bimestral**:
    - **Fila de Pendências (Split-View)**: Revisão assistida lado a lado com busca por nome, série/turma ou número de chamada, navegação rápida por teclado (`↑` / `↓`) e avanço automático para o próximo aluno pendente.
-   - **Tratamento de Alunos Transferidos e Movimentação Escolar**: Modal dedicado para registrar alunos transferidos para outra escola (sem diário), transferidos com frequência parcial no bimestre, remanejados internamente, evasão ou afastamento médico justificado.
+   - **Tratamento de Alunos Transferidos e Movimentação Escolar**: Modal dedicado para registrar alunos transferidos para outra escola (sem diário), transferidos com frequência parcial no bimestre, remanejados internamente, evasão ou afastamento justificado.
    - **Memória Permanente de Vínculos por NIS**: Correções manuais e exceções confirmadas ficam associadas ao **NIS** do estudante, sendo reaproveitadas automaticamente nos ciclos seguintes.
    - **Fila de Lançamento no Portal MEC (`Abaixo do Limite`)**: Tabela operacional focada nos alunos com frequência inferior a 60%/75%, com cópia de NIS em 1 clique, edição inline de presenças/faltas (`P`/`F`), checklist de lançamento e modo de impressão A4.
-5. **Gestão Multi-Escola, Multi-Ano e Virada de Ano (`Zerar Ciclos`)**:
+5. **Módulo de Declaração de Frequência com Faltas (CRAS / Secretaria)**:
+   - **Emissão Oficial no Modelo CRAS**: Gera declarações de frequência com detalhamento mensal (Fevereiro a Dezembro) exatamente no padrão oficial da Secretaria Municipal de Educação.
+   - **Papel Timbrado Oficial em A4**: Incorpora o cabeçalho timbrado oficial vetorizado/alta resolução da Educação, formatado para impressão direta (`Ctrl+P`) ou gravação em PDF sem margens de corte.
+   - **Cálculo Automático a partir dos Diários**: O sistema busca o aluno e extrai automaticamente os dias letivos, comparecimento, faltas e percentual mês a mês direto da planilha da turma.
+   - **Edição Flexível e Instantânea**: Permite preenchimento manual do R.A., inclusão/exclusão de meses, filtros rápidos por bimestre (1º Bim, 1º e 2º, até o 3º, ou ano completo) e recálculo dinâmico dos totais e percentuais em tempo real.
+   - **Destaque Visual de Alerta**: Destaca automaticamente em amarelo os meses cuja frequência ficou abaixo da meta legal (60% Infantil / 75% Fundamental), facilitando a identificação imediata.
+6. **Gestão Multi-Escola, Multi-Ano e Virada de Ano (`Zerar Ciclos`)**:
    - Estrutura de pastas e bancos de dados isolados por **Escola** e por **Ano Letivo** (`📁 [Pasta Raiz] / 📁 [Nome da Escola] / 📁 [Ano Letivo]`).
    - Suporte completo para cadastrar ou alternar escolas, criar novos anos letivos (com migração opcional dos vínculos por NIS) e zerar os ciclos do ano com backup automático em `Historico_Arquivado`.
 
@@ -34,6 +40,7 @@ flowchart LR
   subgraph Cliente["Frontend (React + Vite na Vercel)"]
     UI["Interface Operacional\n(React 18 + TypeScript + Tailwind)"]
     PDF["Extrator PDF Client-Side\n(pdfjs-dist)"]
+    DEC["Emissor de Declarações com Faltas\n(Papel Timbrado A4 + CRAS)"]
     SWR["Cache Instantâneo SWR\n(sessionStorage 5 min)"]
   end
 
@@ -48,6 +55,7 @@ flowchart LR
   end
 
   UI --> PDF
+  UI --> DEC
   UI <--> SWR
   UI -->|JSON POST| API
   API -->|HTTPS Redirect Follow| GAS
@@ -64,7 +72,7 @@ flowchart LR
   - [Vite 6](https://vite.dev/)
   - [Tailwind CSS 4](https://tailwindcss.com/)
   - [Lucide Icons](https://lucide.dev/)
-  - [PDF.js (`pdfjs-dist`)](https://mozilla.github.io/pdf.js/) para leitura instantânea de PDFs no navegador
+  - [PDF.js (`pdfjs-dist`)](https://mozilla.github.io/pdf.js/) para leitura de PDFs oficiais no navegador
 - **Hospedagem & Serverless Proxy**:
   - [Vercel](https://vercel.com/) (`vercel.json` + Serverless Function em `api/gas.ts`)
 - **Integração Backend**:
@@ -76,28 +84,32 @@ flowchart LR
 
 ```text
 ├── api/
-│   └── gas.ts                  # Serverless Function (Proxy para o Google Apps Script na Vercel)
+│   └── gas.ts                     # Serverless Function (Proxy para o Google Apps Script na Vercel)
 ├── web/
 │   ├── api/
-│   │   └── gas.ts              # Serverless Function (compatível quando Root Directory = web)
+│   │   └── gas.ts                 # Serverless Function (compatível quando Root Directory = web)
+│   ├── public/
+│   │   └── timbrado-cotia.png     # Cabeçalho timbrado oficial da Secretaria de Educação (A4)
 │   ├── src/
+│   │   ├── components/
+│   │   │   └── DeclaracaoFaltasView.tsx # Emissor de Declaração de Frequência do Bolsa Família / CRAS
 │   │   ├── services/
-│   │   │   ├── gasApi.ts       # Cliente HTTP tipado para todas as actions da API
-│   │   │   └── pdfExtractor.ts # Extrator client-side de PDFs do Bolsa Família e links do Drive
+│   │   │   ├── gasApi.ts          # Cliente HTTP tipado para todas as actions da API
+│   │   │   └── pdfExtractor.ts    # Extrator client-side de PDFs do Bolsa Família e links do Drive
 │   │   ├── types/
-│   │   │   └── sbf.ts          # Tipagens TypeScript (Ciclos, Alunos, Movimentações, Escolas, Anos)
-│   │   ├── App.tsx             # Aplicação principal (Painel, Diários, PDF, Mesa de Conferência, Configurações)
-│   │   ├── main.tsx            # Ponto de entrada React
-│   │   └── index.css           # Estilos globais e regras de impressão A4 (@media print)
-│   ├── .env.example            # Modelo de variáveis de ambiente
-│   ├── index.html              # Template HTML principal
-│   ├── package.json            # Dependências e scripts do Frontend
-│   ├── tsconfig.json           # Configuração TypeScript
-│   ├── vercel.json             # Rewrites para SPA + API na Vercel
-│   └── vite.config.ts          # Configuração do bundler Vite
-├── .env.example                # Modelo de variáveis de ambiente na raiz
-├── package.json                # Scripts unificados de build/dev na raiz
-└── vercel.json                 # Configuração de build e rotas da Vercel na raiz
+│   │   │   └── sbf.ts             # Tipagens TypeScript (Ciclos, Alunos, Declarações, Movimentações, Escolas, Anos)
+│   │   ├── App.tsx                # Aplicação principal (Painel, Diários, PDF, Mesa, Declaração, Configurações)
+│   │   ├── main.tsx               # Ponto de entrada React
+│   │   └── index.css              # Estilos globais e regras de impressão A4 (@media print)
+│   ├── .env.example               # Modelo de variáveis de ambiente
+│   ├── index.html                 # Template HTML principal
+│   ├── package.json               # Dependências e scripts do Frontend
+│   ├── tsconfig.json              # Configuração TypeScript
+│   ├── vercel.json                # Rewrites para SPA + API na Vercel
+│   └── vite.config.ts             # Configuração do bundler Vite
+├── .env.example                   # Modelo de variáveis de ambiente na raiz
+├── package.json                   # Scripts unificados de build/dev na raiz
+└── vercel.json                    # Configuração de build e rotas da Vercel na raiz
 ```
 
 ---
@@ -146,14 +158,14 @@ npm --prefix web run build
 
 ## Como Hospedar na Vercel
 
-O repositório já está pré-configurado para funcionar na Vercel tanto com **Root Directory = `./` (raiz)** quanto com **Root Directory = `web`**:
+O repositório está configurado para publicação instantânea na Vercel:
 
-1. Acesse [vercel.com/new](https://vercel.com/new) e importe este repositório do GitHub.
-2. Em **Environment Variables**, importe o seu arquivo `.env` local (ou adicione `GAS_WEBAPP_URL` e `VITE_GAS_WEBAPP_URL` apontando para a URL `/exec` do seu Web App no Google Apps Script).
+1. Acesse [vercel.com/new](https://vercel.com/new) e importe o repositório do GitHub.
+2. Em **Environment Variables**, adicione `GAS_WEBAPP_URL` e `VITE_GAS_WEBAPP_URL` apontando para a URL `/exec` da implantação do seu Google Apps Script.
 3. Clique em **Deploy**.
 
 ---
 
 ## Privacidade e Proteção de Dados (LGPD)
 
-Este repositório contém **exclusivamente o código-fonte do Frontend e do Proxy Serverless**. Nenhum dado pessoal de alunos (nomes, NIS, datas de nascimento), PDFs do Bolsa Família, planilhas de diários de classe ou credenciais privadas de acesso ao Google Drive fazem parte deste repositório.
+Este repositório contém **exclusivamente o código-fonte da aplicação**. Nenhum dado pessoal de alunos (nomes, NIS, datas de nascimento), PDFs do Bolsa Família, planilhas de diários de classe ou credenciais privadas de acesso ao Google Drive fazem parte deste repositório ou de seus arquivos de configuração.
