@@ -2,23 +2,28 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
+  Bus,
   Camera,
   CheckCircle2,
   ClipboardCheck,
   Copy,
+  Edit3,
   ExternalLink,
   Eye,
   FileSpreadsheet,
   FileText,
+  Filter,
   FolderOpen,
-  GraduationCap,
   HeartHandshake,
   Loader2,
+  Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Settings,
   Sparkles,
+  Trash2,
   Upload,
   UserCheck,
   UserMinus,
@@ -27,6 +32,14 @@ import {
   Users,
   X
 } from 'lucide-react';
+import {
+  alternarTagNaObservacao,
+  carregarTagsObservacaoPiloto,
+  observacaoContemTag,
+  salvarTagsObservacaoPiloto,
+  TagObservacaoPiloto,
+  TAGS_PADRAO_PILOTO
+} from '../services/configEscolarStore';
 import { gasApi } from '../services/gasApi';
 import {
   compararRelatorioSedComListasPiloto,
@@ -156,6 +169,56 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     if (onChangeSubTab) onChangeSubTab(tab);
   }
 
+  // Tags configuráveis de Observações (Peruas escolares, TEG, @ vai sozinho, etc.)
+  const [tagsObsConfig, setTagsObsConfig] = useState<TagObservacaoPiloto[]>(() =>
+    carregarTagsObservacaoPiloto()
+  );
+  const [novaTagSigla, setNovaTagSigla] = useState<string>('');
+  const [novaTagRotulo, setNovaTagRotulo] = useState<string>('');
+  const [novaTagCategoria, setNovaTagCategoria] = useState<
+    'PERUA' | 'TRANSPORTE' | 'SAIDA' | 'OUTRO'
+  >('PERUA');
+
+  function handleAdicionarNovaTag() {
+    const siglaLimpa = novaTagSigla.trim().toUpperCase();
+    if (!siglaLimpa) return;
+    if (tagsObsConfig.some((t) => t.sigla.toUpperCase() === siglaLimpa)) {
+      alert('Este marcador/perua já está cadastrado.');
+      return;
+    }
+    const corPorCat: Record<string, string> = {
+      PERUA: 'bg-amber-100 text-amber-950 border-amber-300',
+      TRANSPORTE: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      SAIDA: 'bg-sky-100 text-sky-900 border-sky-300',
+      OUTRO: 'bg-purple-100 text-purple-900 border-purple-300'
+    };
+    const nova: TagObservacaoPiloto = {
+      id: `custom-${Date.now()}`,
+      sigla: siglaLimpa,
+      rotulo:
+        novaTagRotulo.trim() ||
+        (novaTagCategoria === 'PERUA' ? `Perua: ${siglaLimpa}` : siglaLimpa),
+      categoria: novaTagCategoria,
+      corClasse: corPorCat[novaTagCategoria] || corPorCat.OUTRO
+    };
+    const atualizadas = [...tagsObsConfig, nova];
+    setTagsObsConfig(atualizadas);
+    salvarTagsObservacaoPiloto(atualizadas);
+    setNovaTagSigla('');
+    setNovaTagRotulo('');
+  }
+
+  function handleRemoverTag(id: string) {
+    const atualizadas = tagsObsConfig.filter((t) => t.id !== id);
+    setTagsObsConfig(atualizadas);
+    salvarTagsObservacaoPiloto(atualizadas);
+  }
+
+  function handleRestaurarTagsPadrao() {
+    setTagsObsConfig(TAGS_PADRAO_PILOTO);
+    salvarTagsObservacaoPiloto(TAGS_PADRAO_PILOTO);
+  }
+
   // Estado da pasta de Listas Piloto (Google Drive)
   const [pastaInput, setPastaInput] = useState<string>(
     () => localStorage.getItem(STORAGE_KEY_PASTA_PILOTO) || ''
@@ -195,11 +258,35 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
   const [buscaTurmaOuAluno, setBuscaTurmaOuAluno] = useState<string>('');
   const [turmaExpandidaCompleta, setTurmaExpandidaCompleta] = useState<string | null>(null);
 
-  // Estado para a sub-aba "Procurar Aluno (Ficha Completa)"
+  // =========================================================================
+  // ESTADO PARA A SUB-ABA "PROCURAR ALUNO" (FILTROS AVANÇADOS + EDIÇÃO DIRETA)
+  // =========================================================================
   const [termoProcurarAluno, setTermoProcurarAluno] = useState<string>('');
+  const [filtroAnoSerie, setFiltroAnoSerie] = useState<string>('TODOS');
+  const [filtroSalaEspecifica, setFiltroSalaEspecifica] = useState<string>('TODAS');
+  const [filtroTransporteObs, setFiltroTransporteObs] = useState<string>('TODOS');
   const [filtroBolsaProcurar, setFiltroBolsaProcurar] = useState<
-    'TODOS' | 'BOLSA_FAMILIA' | 'APENAS_ATIVOS'
+    'TODOS' | 'BOLSA_FAMILIA' | 'APENAS_ATIVOS' | 'APENAS_MOVIMENTADOS'
   >('TODOS');
+
+  // Estado do editor inline de aluno na sub-aba Procurar Aluno
+  const [alunoEmEdicaoKey, setAlunoEmEdicaoKey] = useState<string | null>(null);
+  const [formEdicaoAluno, setFormEdicaoAluno] = useState<{
+    planilhaId: string;
+    nomeAba: string;
+    turmaExibicao: string;
+    linhaPlanilha: number;
+    nr: number;
+    rm: string;
+    nome: string;
+    situacao: string;
+    dataMovimentacao: string;
+    dataNascimento: string;
+    ra: string;
+    direitoImagem: string;
+    observacoes: string;
+  } | null>(null);
+  const [salvandoEdicaoAluno, setSalvandoEdicaoAluno] = useState<boolean>(false);
 
   // Estado para a sub-aba "Turmas & Listas Piloto"
   const [turmaSelecionadaConsulta, setTurmaSelecionadaConsulta] = useState<string>('');
@@ -228,12 +315,10 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     });
   }
 
-  // Carregar listas piloto salvas no servidor ao abrir a aba
   useEffect(() => {
     carregarListasPilotoDoDrive(false);
   }, []);
 
-  // Notificar App.tsx quando turmasPiloto mudar
   useEffect(() => {
     if (onTurmasPilotoLoaded) {
       onTurmasPilotoLoaded(turmasPiloto);
@@ -245,7 +330,6 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     } catch {}
   }, [turmasPiloto]);
 
-  // Recalcular comparações sempre que turmasSed ou turmasPiloto mudarem
   useEffect(() => {
     if (turmasSed.length === 0 && turmasPiloto.length === 0) {
       setComparacoes([]);
@@ -286,7 +370,6 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     };
   }, [comparacoes]);
 
-  // Informar o cabeçalho principal do App sobre o estado atual do módulo Lista Piloto
   useEffect(() => {
     if (!onHeaderStateChange) return;
     onHeaderStateChange({
@@ -312,11 +395,10 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     carregandoPiloto
   ]);
 
-  // Mapa de alunos do Bolsa Família (cruzando ciclo atual + vínculos NIS permanentes)
+  // Mapa de alunos do Bolsa Família
   const mapaBolsaPorNomeNormalizado = useMemo(() => {
     const mapa = new Map<string, InfoBolsaAlunoCruzamento>();
 
-    // 1. Vínculos salvos
     for (const v of vinculosBolsa || []) {
       const nBolsa = normalizarNomeAluno(v.nomeBolsa || '');
       const nDiario = normalizarNomeAluno(v.nomeDiario || '');
@@ -329,7 +411,6 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
       if (nDiario) mapa.set(nDiario, info);
     }
 
-    // 2. Registros do ciclo atual do Bolsa Família (conferidos, abaixo do limite, pendências, movimentações)
     const visoes = dadosCicloBolsa?.visoes || {};
     const listasCiclo = [
       ...(visoes.conferidos?.rows || []),
@@ -634,6 +715,85 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     }
   }
 
+  // Abrir editor inline para um aluno na sub-aba Procurar Aluno
+  function abrirEdicaoDiretaAluno(turma: TurmaListaPilotoDrive, aluno: any) {
+    const key = `${turma.idUnico}::${aluno.linhaPlanilha}::${aluno.nr}`;
+    if (alunoEmEdicaoKey === key) {
+      setAlunoEmEdicaoKey(null);
+      setFormEdicaoAluno(null);
+      return;
+    }
+    setAlunoEmEdicaoKey(key);
+    setFormEdicaoAluno({
+      planilhaId: turma.planilhaId,
+      nomeAba: turma.nomeAba,
+      turmaExibicao: obterNomeTurmaDaPlanilha(turma.planilhaNome || turma.turmaExibicao),
+      linhaPlanilha: aluno.linhaPlanilha,
+      nr: aluno.nr,
+      rm: aluno.rm || '',
+      nome: aluno.nome || '',
+      situacao: aluno.situacao || '',
+      dataMovimentacao: aluno.dataMovimentacao || '',
+      dataNascimento: aluno.dataNascimento || '',
+      ra: aluno.ra || '',
+      direitoImagem: aluno.direitoImagem || '',
+      observacoes: aluno.observacoes || ''
+    });
+  }
+
+  async function salvarEdicaoDiretaAlunoNoSheets() {
+    if (!formEdicaoAluno) return;
+    if (!formEdicaoAluno.planilhaId) {
+      alert(
+        'Esta Lista Piloto foi carregada apenas via PDF local. Conecte a pasta do Google Drive para salvar alterações diretamente na planilha Google Sheets.'
+      );
+      return;
+    }
+
+    setSalvandoEdicaoAluno(true);
+    setMensagemSucesso('');
+    try {
+      const resp = await gasApi.aplicarAtualizacoesListaPiloto({
+        atualizacoesPorTurma: [
+          {
+            planilhaId: formEdicaoAluno.planilhaId,
+            nomeAba: formEdicaoAluno.nomeAba,
+            turmaExibicao: formEdicaoAluno.turmaExibicao,
+            mudancas: [
+              {
+                linhaPlanilha: formEdicaoAluno.linhaPlanilha,
+                nr: formEdicaoAluno.nr,
+                nome: formEdicaoAluno.nome,
+                rm: formEdicaoAluno.rm,
+                situacao: formEdicaoAluno.situacao,
+                dataMovimentacao: formEdicaoAluno.dataMovimentacao,
+                dataNascimento: formEdicaoAluno.dataNascimento,
+                ra: formEdicaoAluno.ra,
+                direitoImagem: formEdicaoAluno.direitoImagem,
+                observacoes: formEdicaoAluno.observacoes
+              }
+            ]
+          }
+        ]
+      });
+
+      if (resp?.erros?.length) {
+        throw new Error(resp.erros.join('\n'));
+      }
+
+      setMensagemSucesso(
+        `Dados do aluno "${formEdicaoAluno.nome}" atualizados com sucesso na Lista Piloto (${formEdicaoAluno.turmaExibicao})!`
+      );
+      setAlunoEmEdicaoKey(null);
+      setFormEdicaoAluno(null);
+      await carregarListasPilotoDoDrive(false);
+    } catch (err: any) {
+      alert('Erro ao salvar alteração do aluno: ' + (err?.message || String(err)));
+    } finally {
+      setSalvandoEdicaoAluno(false);
+    }
+  }
+
   function copiarTexto(texto: string, rotulo: string) {
     navigator.clipboard.writeText(texto);
     setCopiadoTexto(rotulo);
@@ -669,42 +829,88 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     });
   }, [comparacoes, filtroStatusSala, buscaTurmaOuAluno]);
 
-  // Base enriquecida para a Sub-aba "Procurar Aluno (Ficha Completa)"
+  // Base enriquecida para a Sub-aba "Procurar Aluno"
   const todosAlunosEnriquecidos = useMemo(() => {
     const lista: Array<{
       turma: TurmaListaPilotoDrive;
       nomeTurmaExibicao: string;
+      turmaCodigo: string;
       horarioPadrao: string;
       aluno: any;
       infoBolsa: InfoBolsaAlunoCruzamento | null;
-      infoImagem: { sigla: string; rotulo: string; corClasse: string };
+      tagsPresentes: TagObservacaoPiloto[];
     }> = [];
 
     for (const t of turmasPiloto) {
       const nomeTurma = obterNomeTurmaDaPlanilha(t.planilhaNome || t.turmaExibicao);
+      const codigoTurma = extrairCodigoCanonicoTurma(t.planilhaNome || nomeTurma);
       const ehTarde = /\b(TARDE|VESPERTINO|13:00)\b/i.test(`${nomeTurma} ${t.horarios || ''}`);
       const horarioPadrao = t.horarios || (ehTarde ? '13:00 às 17:40' : '07:00 às 11:40');
 
       for (const a of t.alunos) {
         const infoBolsa = mapaBolsaPorNomeNormalizado.get(a.nomeNormalizado) || null;
-        const infoImagem = traduzirDireitoImagem(a.direitoImagem);
+        const tagsPresentes = tagsObsConfig.filter((tg) =>
+          observacaoContemTag(a.observacoes || '', tg.sigla)
+        );
         lista.push({
           turma: t,
           nomeTurmaExibicao: nomeTurma,
+          turmaCodigo: codigoTurma,
           horarioPadrao,
           aluno: a,
           infoBolsa,
-          infoImagem
+          tagsPresentes
         });
       }
     }
     return lista;
-  }, [turmasPiloto, mapaBolsaPorNomeNormalizado]);
+  }, [turmasPiloto, mapaBolsaPorNomeNormalizado, tagsObsConfig]);
 
   const alunosFiltradosProcurar = useMemo(() => {
     const q = termoProcurarAluno.trim().toUpperCase();
     return todosAlunosEnriquecidos
       .filter((item) => {
+        // 1. Filtro por Ano / Série (ex: Todos do 1º Ano, Pré-Escola, AEE)
+        if (filtroAnoSerie !== 'TODOS') {
+          if (filtroAnoSerie === 'PRE' && !item.turmaCodigo.startsWith('PRE_')) return false;
+          if (filtroAnoSerie === 'AEE' && !item.turmaCodigo.startsWith('AEE_')) return false;
+          if (
+            filtroAnoSerie.startsWith('FUND_') &&
+            !item.turmaCodigo.startsWith(filtroAnoSerie)
+          ) {
+            return false;
+          }
+        }
+
+        // 2. Filtro por Sala / Turma específica
+        if (filtroSalaEspecifica !== 'TODAS' && item.turma.idUnico !== filtroSalaEspecifica) {
+          return false;
+        }
+
+        // 3. Filtro por Transporte / Peruas Escolares / Saída (@, TEG, TIO TIAGO, TIO ZEZINHO, etc.)
+        if (filtroTransporteObs !== 'TODOS') {
+          const obsUpper = String(item.aluno.observacoes || '').toUpperCase();
+          if (filtroTransporteObs === 'TODAS_PERUAS') {
+            const peruas = tagsObsConfig.filter((t) => t.categoria === 'PERUA');
+            const usaAlgumaPerua =
+              peruas.some((p) => observacaoContemTag(obsUpper, p.sigla)) ||
+              /\b(TIO|TIA|PERUA)\b/i.test(obsUpper);
+            if (!usaAlgumaPerua) return false;
+          } else if (filtroTransporteObs === 'COM_DEFICIENCIA') {
+            if (
+              !/\b(AUTISTA|INTELECTUAL|MULTIPLA|MÚLTIPLA|DOWN|BAIXA\s*VISAO|SURDEZ|FISICA|DEFICIENCIA|TEA|TDAH)\b/i.test(
+                obsUpper
+              )
+            ) {
+              return false;
+            }
+          } else if (filtroTransporteObs.startsWith('TAG::')) {
+            const siglaAlvo = filtroTransporteObs.replace('TAG::', '');
+            if (!observacaoContemTag(obsUpper, siglaAlvo)) return false;
+          }
+        }
+
+        // 4. Filtro por Situação / Bolsa Família
         if (filtroBolsaProcurar === 'BOLSA_FAMILIA' && !item.infoBolsa) return false;
         if (
           filtroBolsaProcurar === 'APENAS_ATIVOS' &&
@@ -712,6 +918,14 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
         ) {
           return false;
         }
+        if (
+          filtroBolsaProcurar === 'APENAS_MOVIMENTADOS' &&
+          item.aluno.situacaoNormalizada === 'ATIVO'
+        ) {
+          return false;
+        }
+
+        // 5. Busca por texto livre
         if (!q) return true;
         return (
           item.aluno.nome.toUpperCase().includes(q) ||
@@ -719,11 +933,21 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
           item.aluno.rm.toUpperCase().includes(q) ||
           item.nomeTurmaExibicao.toUpperCase().includes(q) ||
           (item.infoBolsa?.nis || '').toUpperCase().includes(q) ||
-          item.aluno.observacoes.toUpperCase().includes(q)
+          String(item.aluno.observacoes || '')
+            .toUpperCase()
+            .includes(q)
         );
       })
-      .slice(0, 60);
-  }, [todosAlunosEnriquecidos, termoProcurarAluno, filtroBolsaProcurar]);
+      .slice(0, 120);
+  }, [
+    todosAlunosEnriquecidos,
+    termoProcurarAluno,
+    filtroAnoSerie,
+    filtroSalaEspecifica,
+    filtroTransporteObs,
+    filtroBolsaProcurar,
+    tagsObsConfig
+  ]);
 
   const turmaAtivaDetalhe = useMemo(() => {
     return (
@@ -762,7 +986,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
             }`}
           >
             <UserSearch className="w-4 h-4" />
-            Procurar Aluno (Ficha Completa)
+            Procurar e Editar Aluno
           </button>
 
           <button
@@ -786,7 +1010,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
             }`}
           >
             <Settings className="w-4 h-4" />
-            Pasta do Drive & Configurações
+            Pasta, Peruas & Configurações
           </button>
         </div>
 
@@ -1127,7 +1351,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                 </div>
               )}
 
-              {/* Barra de Filtros e Legenda de Direito de Imagem (IM) */}
+              {/* Barra de Filtros e Legenda de Direito de Imagem (IM) e Tags Acumulativas */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2">
@@ -1176,26 +1400,36 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                 </div>
 
                 {/* Legenda da coluna IM (Direito de Imagem) */}
-                <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
-                  <span className="font-bold text-slate-800 flex items-center gap-1">
-                    <Camera className="w-3.5 h-3.5 text-indigo-600" />
-                    Legenda Direito de Imagem (Coluna IM):
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-semibold">
-                    P+UE = Público + Unidade Escolar
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-900 font-semibold">
-                    P = Público
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 font-semibold">
-                    UE = Unidade Escolar
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-900 font-semibold">
-                    NÃO = Não Autorizado
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
-                    Em branco = Sem informação
-                  </span>
+                <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-slate-800 flex items-center gap-1">
+                      <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                      Direito de Imagem (IM):
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-semibold">
+                      P+UE = Público + UE
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-900 font-semibold">
+                      P = Público
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 font-semibold">
+                      UE = Unidade Escolar
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-900 font-semibold">
+                      NÃO = Não Autorizado
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+                      Em branco = Sem info
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubTab('config')}
+                    className="text-indigo-600 hover:underline font-bold cursor-pointer"
+                  >
+                    + Configurar Peruas / Tags de OBS
+                  </button>
                 </div>
               </div>
 
@@ -1365,10 +1599,10 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                                   <th className="py-2.5 px-2 w-24">RM (Escola)</th>
                                   <th className="py-2.5 px-2 w-28">SIT. (Gravar)</th>
                                   <th className="py-2.5 px-2 w-28">DATA MOV.</th>
-                                  <th className="py-2.5 px-2 w-44">
-                                    IM (Direito de Imagem)
+                                  <th className="py-2.5 px-2 w-44">IM (Direito de Imagem)</th>
+                                  <th className="py-2.5 px-3 min-w-[280px]">
+                                    OBSERVAÇÕES (Acumulativas)
                                   </th>
-                                  <th className="py-2.5 px-3 min-w-[200px]">OBSERVAÇÕES</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-200 text-xs">
@@ -1544,31 +1778,30 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                                         />
                                       </td>
 
-                                      {/* Coluna IM: Direito de Imagem (P, UE, P+UE, NÃO ou Em branco) */}
+                                      {/* Coluna IM: Direito de Imagem */}
                                       <td className="py-3 px-2">
-                                        <div className="space-y-1">
-                                          <select
-                                            value={m.direitoImagemGravar}
-                                            onChange={(e) =>
-                                              atualizarCampoMudanca(
-                                                comp.idComparacao,
-                                                m.id,
-                                                'direitoImagemGravar',
-                                                e.target.value
-                                              )
-                                            }
-                                            className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-900 focus:border-indigo-600 outline-none"
-                                          >
-                                            <option value="">(Em branco) Sem info</option>
-                                            <option value="P+UE">P+UE (Público + UE)</option>
-                                            <option value="P">P (Público)</option>
-                                            <option value="UE">UE (Unidade Escolar)</option>
-                                            <option value="NÃO">NÃO (Não autorizado)</option>
-                                          </select>
-                                        </div>
+                                        <select
+                                          value={m.direitoImagemGravar}
+                                          onChange={(e) =>
+                                            atualizarCampoMudanca(
+                                              comp.idComparacao,
+                                              m.id,
+                                              'direitoImagemGravar',
+                                              e.target.value
+                                            )
+                                          }
+                                          className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-900 focus:border-indigo-600 outline-none"
+                                        >
+                                          <option value="">(Em branco) Sem info</option>
+                                          <option value="P+UE">P+UE (Público + UE)</option>
+                                          <option value="P">P (Público)</option>
+                                          <option value="UE">UE (Unidade Escolar)</option>
+                                          <option value="NÃO">NÃO (Não autorizado)</option>
+                                        </select>
                                       </td>
 
-                                      <td className="py-3 px-3">
+                                      {/* Coluna OBSERVAÇÕES com Checkboxes Acumulativos (@, TEG, Peruas Escolares) */}
+                                      <td className="py-3 px-3 space-y-1.5">
                                         <input
                                           type="text"
                                           value={m.observacoesGravar}
@@ -1580,9 +1813,48 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                                               e.target.value
                                             )
                                           }
-                                          placeholder="Ex: MS: 06/11 ou TR: 13/07"
+                                          placeholder="Ex: MS: 06/11 | TIO TIAGO | @"
                                           className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs text-slate-800 focus:border-indigo-600 outline-none"
                                         />
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          {tagsObsConfig.map((tag) => {
+                                            const ativo = observacaoContemTag(
+                                              m.observacoesGravar,
+                                              tag.sigla
+                                            );
+                                            return (
+                                              <label
+                                                key={tag.id}
+                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-bold cursor-pointer select-none transition ${
+                                                  ativo
+                                                    ? tag.corClasse
+                                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                                                }`}
+                                                title={`Incluir ou remover "${tag.sigla}" acumulativamente nas observações`}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={ativo}
+                                                  onChange={(e) => {
+                                                    const novoObs = alternarTagNaObservacao(
+                                                      m.observacoesGravar,
+                                                      tag.sigla,
+                                                      e.target.checked
+                                                    );
+                                                    atualizarCampoMudanca(
+                                                      comp.idComparacao,
+                                                      m.id,
+                                                      'observacoesGravar',
+                                                      novoObs
+                                                    );
+                                                  }}
+                                                  className="w-3 h-3 rounded"
+                                                />
+                                                <span>{tag.sigla}</span>
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
                                       </td>
                                     </tr>
                                   );
@@ -1695,7 +1967,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
       )}
 
       {/* ====================================================================
-          SUB-ABA 2: PROCURAR ALUNO (FICHA COMPLETA UNIFICADA)
+          SUB-ABA 2: PROCURAR E EDITAR ALUNO (COM FILTROS AVANÇADOS)
       ==================================================================== */}
       {currentSubTab === 'procurarAluno' && (
         <div className="space-y-5">
@@ -1703,46 +1975,186 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
               <div>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-bold">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Consulta Unificada • Lista Piloto + Bolsa Família
+                  <Filter className="w-3.5 h-3.5" />
+                  Pesquisa Avançada & Edição Direta nas Listas Piloto
                 </span>
                 <h2 className="text-lg font-extrabold text-slate-900 mt-1">
-                  Procurar Aluno na Escola (Ficha Completa)
+                  Procurar e Editar Alunos (Por Sala, Ano, TEG, Peruas Escolares e Bolsa Família)
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Consulte Nome, RA, RM, Turma, Horário, Situação, Observações e verifique se o
-                  aluno é cadastrado no Bolsa Família.
+                  Filtre alunos por ano (ex: todos do 1° ano), sala, transporte (TEG, Tio Tiago, Tio
+                  Zezinho, @ vai sozinho) e clique em <strong>Editar na Lista Piloto</strong> para
+                  alterar RM, RA, Nome, Direito de Imagem ou Observações acumulativas.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 font-bold">
-                  Total nas Listas Piloto: {todosAlunosEnriquecidos.length} registros
+                <span className="px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 font-bold">
+                  Encontrados: {alunosFiltradosProcurar.length} aluno(s)
                 </span>
+                {(filtroAnoSerie !== 'TODOS' ||
+                  filtroSalaEspecifica !== 'TODAS' ||
+                  filtroTransporteObs !== 'TODOS' ||
+                  filtroBolsaProcurar !== 'TODOS' ||
+                  termoProcurarAluno) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTermoProcurarAluno('');
+                      setFiltroAnoSerie('TODOS');
+                      setFiltroSalaEspecifica('TODAS');
+                      setFiltroTransporteObs('TODOS');
+                      setFiltroBolsaProcurar('TODOS');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+                  >
+                    Limpar Filtros
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Barra de Pesquisa e Filtro Rápido */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-              <div className="md:col-span-2 relative">
+            {/* Grade de Filtros Avançados */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
+              {/* 1. Busca por Nome / RA / RM / Obs */}
+              <div className="lg:col-span-2 relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={termoProcurarAluno}
                   onChange={(e) => setTermoProcurarAluno(e.target.value)}
-                  placeholder="Digite o Nome do aluno, RA, RM, Turma ou NIS..."
-                  className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-300 focus:border-indigo-600 outline-none"
+                  placeholder="Pesquisar por Nome, RA, RM, NIS ou Observação..."
+                  className="w-full pl-10 pr-4 py-2.5 text-xs font-semibold rounded-xl border border-slate-300 focus:border-indigo-600 outline-none"
                 />
               </div>
 
+              {/* 2. Filtro por Ano / Série (ex: Todos do 1° Ano) */}
               <div>
+                <select
+                  value={filtroAnoSerie}
+                  onChange={(e) => {
+                    setFiltroAnoSerie(e.target.value);
+                    setFiltroSalaEspecifica('TODAS');
+                  }}
+                  className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-800"
+                >
+                  <option value="TODOS">Ano / Série: Todos</option>
+                  <option value="PRE">Educação Infantil / Pré-Escola</option>
+                  <option value="FUND_1">Todos do 1° Ano</option>
+                  <option value="FUND_2">Todos do 2° Ano</option>
+                  <option value="FUND_3">Todos do 3° Ano</option>
+                  <option value="FUND_4">Todos do 4° Ano</option>
+                  <option value="FUND_5">Todos do 5° Ano</option>
+                  <option value="AEE">AEE (Educação Especial)</option>
+                </select>
+              </div>
+
+              {/* 3. Filtro por Sala / Turma Específica */}
+              <div>
+                <select
+                  value={filtroSalaEspecifica}
+                  onChange={(e) => setFiltroSalaEspecifica(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-800"
+                >
+                  <option value="TODAS">Sala / Turma: Todas ({turmasPiloto.length})</option>
+                  {turmasPiloto.map((t) => (
+                    <option key={t.idUnico} value={t.idUnico}>
+                      {obterNomeTurmaDaPlanilha(t.planilhaNome)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 4. Filtro por TEG / Peruas Escolares / Saída / Obs */}
+              <div>
+                <select
+                  value={filtroTransporteObs}
+                  onChange={(e) => setFiltroTransporteObs(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-indigo-300 bg-indigo-50/40 text-indigo-950"
+                >
+                  <option value="TODOS">Transporte / Peruas / Obs: Todos</option>
+                  <option value="TODAS_PERUAS">
+                    🚐 Todas as Peruas Escolares (Tio Tiago / Zezinho / Outras)
+                  </option>
+                  {tagsObsConfig.map((tag) => (
+                    <option key={tag.id} value={`TAG::${tag.sigla}`}>
+                      {tag.rotulo}
+                    </option>
+                  ))}
+                  <option value="COM_DEFICIENCIA">
+                    🧩 Com Deficiência / Educação Especial
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            {/* Atalhos Rápidos de Filtro em 1 Clique (Chips) */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500 mr-1">Filtros Rápidos:</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFiltroTransporteObs(filtroTransporteObs === 'TAG::TEG' ? 'TODOS' : 'TAG::TEG')
+                  }
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                    filtroTransporteObs === 'TAG::TEG'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  TEG
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFiltroTransporteObs(
+                      filtroTransporteObs === 'TODAS_PERUAS' ? 'TODOS' : 'TODAS_PERUAS'
+                    )
+                  }
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                    filtroTransporteObs === 'TODAS_PERUAS'
+                      ? 'bg-amber-600 text-white border-amber-600'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                  }`}
+                >
+                  Todas Peruas
+                </button>
+
+                {tagsObsConfig
+                  .filter((t) => t.sigla !== 'TEG')
+                  .map((tag) => {
+                    const valFiltro = `TAG::${tag.sigla}`;
+                    const ativo = filtroTransporteObs === valFiltro;
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => setFiltroTransporteObs(ativo ? 'TODOS' : valFiltro)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          ativo
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {tag.sigla}
+                      </button>
+                    );
+                  })}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
                 <select
                   value={filtroBolsaProcurar}
                   onChange={(e) => setFiltroBolsaProcurar(e.target.value as any)}
-                  className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-800"
+                  className="px-3 py-1 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-800"
                 >
-                  <option value="TODOS">Todos os Alunos (Ativos e Movimentados)</option>
-                  <option value="APENAS_ATIVOS">Apenas Alunos Ativos</option>
+                  <option value="TODOS">Situação: Todos (Ativos + Movimentados)</option>
+                  <option value="APENAS_ATIVOS">Apenas Alunos ATIVOS</option>
+                  <option value="APENAS_MOVIMENTADOS">
+                    Apenas Movimentados (TRAN, BXTR, REMA, NCOM)
+                  </option>
                   <option value="BOLSA_FAMILIA">Apenas Cadastrados no Bolsa Família</option>
                 </select>
               </div>
@@ -1751,25 +2163,39 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
 
           {todosAlunosEnriquecidos.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-sm text-slate-500">
-              Conecte a pasta das Listas Piloto do Google Drive para consultar a ficha completa dos
+              Conecte a pasta das Listas Piloto do Google Drive para consultar e editar a ficha dos
               alunos.
             </div>
           ) : alunosFiltradosProcurar.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-sm text-slate-500">
-              Nenhum aluno encontrado para os filtros informados.
+              Nenhum aluno encontrado para os filtros selecionados.
             </div>
           ) : (
+            /* LISTA VERTICAL (UM ALUNO ABAIXO DO OUTRO) */
             <div className="flex flex-col space-y-3">
               {alunosFiltradosProcurar.map((item, idx) => {
-                const { aluno, turma, nomeTurmaExibicao, horarioPadrao, infoBolsa } = item;
+                const {
+                  aluno,
+                  turma,
+                  nomeTurmaExibicao,
+                  horarioPadrao,
+                  infoBolsa,
+                  tagsPresentes
+                } = item;
                 const ehAtivo = aluno.situacaoNormalizada === 'ATIVO';
+                const cardKey = `${turma.idUnico}::${aluno.linhaPlanilha}::${aluno.nr}`;
+                const estaEditando = alunoEmEdicaoKey === cardKey && formEdicaoAluno !== null;
 
                 return (
                   <div
-                    key={`${turma.idUnico}-${aluno.nr}-${idx}`}
-                    className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs hover:border-indigo-300 transition space-y-3"
+                    key={`${cardKey}-${idx}`}
+                    className={`bg-white rounded-2xl border p-4 shadow-xs transition space-y-3 ${
+                      estaEditando
+                        ? 'border-indigo-500 ring-2 ring-indigo-500/20'
+                        : 'border-slate-200 hover:border-indigo-300'
+                    }`}
                   >
-                    {/* Topo da Ficha: Nome + Status Ativo/Movimentado + Badge Bolsa Família */}
+                    {/* Topo da Ficha: Nome + Tags Acumulativas (@, TEG, Peruas) + Status + Bolsa Família */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1783,6 +2209,16 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
+
+                          {/* Badges das Tags Acumulativas presentes nas observações (@, TEG, Tio Tiago, Tio Zezinho) */}
+                          {tagsPresentes.map((tg) => (
+                            <span
+                              key={tg.id}
+                              className={`px-2 py-0.5 rounded-md border text-[10px] font-extrabold ${tg.corClasse}`}
+                            >
+                              {tg.sigla}
+                            </span>
+                          ))}
                         </div>
                         <div className="text-xs text-slate-500 mt-0.5">
                           Turma: <strong className="text-indigo-700">{nomeTurmaExibicao}</strong>
@@ -1816,10 +2252,23 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                             Bolsa Família: Não consta
                           </span>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={() => abrirEdicaoDiretaAluno(turma, aluno)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                            estaEditando
+                              ? 'bg-slate-800 text-white'
+                              : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200'
+                          }`}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          {estaEditando ? 'Fechar Edição' : 'Editar na Lista Piloto'}
+                        </button>
                       </div>
                     </div>
 
-                    {/* Linha de Dados Escolares (RM, Nº, RA, Nascimento, Observações) */}
+                    {/* Linha de Dados Escolares (RM, Nº, RA, Nascimento) */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100 text-xs">
                       <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
                         <div className="text-[10px] font-bold uppercase text-slate-400">
@@ -1870,7 +2319,230 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
 
                     {aluno.observacoes && (
                       <div className="px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-xs font-semibold">
-                        Observações: <strong>{aluno.observacoes}</strong>
+                        Observações na Lista Piloto: <strong>{aluno.observacoes}</strong>
+                      </div>
+                    )}
+
+                    {/* PAINEL DE EDIÇÃO DIRETA NA LISTA PILOTO (RM, NOME, RA, SITUAÇÃO, IM E CHECKBOXES ACUMULATIVOS DE OBS) */}
+                    {estaEditando && formEdicaoAluno && (
+                      <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-extrabold uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                            <Edit3 className="w-4 h-4 text-indigo-600" />
+                            Editar Dados do Aluno na Planilha "{formEdicaoAluno.turmaExibicao}"
+                          </h4>
+                          <span className="text-[11px] text-indigo-700 font-medium">
+                            Linha {formEdicaoAluno.linhaPlanilha} • Chamada Nº {formEdicaoAluno.nr}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3 text-xs">
+                          <div className="md:col-span-2">
+                            <label className="block font-bold text-slate-700 mb-1">
+                              Nome do Aluno
+                            </label>
+                            <input
+                              type="text"
+                              value={formEdicaoAluno.nome}
+                              onChange={(e) =>
+                                setFormEdicaoAluno({ ...formEdicaoAluno, nome: e.target.value })
+                              }
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-bold"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">
+                              RM (Escola)
+                            </label>
+                            <input
+                              type="text"
+                              value={formEdicaoAluno.rm}
+                              onChange={(e) =>
+                                setFormEdicaoAluno({ ...formEdicaoAluno, rm: e.target.value })
+                              }
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-bold"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">R.A.</label>
+                            <input
+                              type="text"
+                              value={formEdicaoAluno.ra}
+                              onChange={(e) =>
+                                setFormEdicaoAluno({ ...formEdicaoAluno, ra: e.target.value })
+                              }
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-mono font-bold"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">
+                              Nascimento
+                            </label>
+                            <input
+                              type="text"
+                              value={formEdicaoAluno.dataNascimento}
+                              onChange={(e) =>
+                                setFormEdicaoAluno({
+                                  ...formEdicaoAluno,
+                                  dataNascimento: e.target.value
+                                })
+                              }
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-bold"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">
+                              Direito Imagem (IM)
+                            </label>
+                            <select
+                              value={formEdicaoAluno.direitoImagem}
+                              onChange={(e) =>
+                                setFormEdicaoAluno({
+                                  ...formEdicaoAluno,
+                                  direitoImagem: e.target.value
+                                })
+                              }
+                              className="w-full px-2.5 py-2 rounded-lg border border-slate-300 bg-white font-bold"
+                            >
+                              <option value="">(Em branco) Sem info</option>
+                              <option value="P+UE">P+UE (Público + UE)</option>
+                              <option value="P">P (Público)</option>
+                              <option value="UE">UE (Unidade Escolar)</option>
+                              <option value="NÃO">NÃO (Não autorizado)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 text-xs">
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">
+                              Situação (SIT.)
+                            </label>
+                            <select
+                              value={formEdicaoAluno.situacao.toUpperCase()}
+                              onChange={(e) =>
+                                setFormEdicaoAluno({
+                                  ...formEdicaoAluno,
+                                  situacao: e.target.value
+                                })
+                              }
+                              className="w-full px-2.5 py-2 rounded-lg border border-slate-300 bg-white font-bold"
+                            >
+                              <option value="">ATIVO (Em branco)</option>
+                              <option value="TRAN">TRAN (Transferido)</option>
+                              <option value="BXTR">BXTR (Baixa Transf.)</option>
+                              <option value="REMA">REMA (Remanejado)</option>
+                              <option value="NCOM">NCOM (Não Comparecido)</option>
+                              <option value="CEDE">CEDE (Cessão Desist.)</option>
+                              <option value="ABAN">ABAN (Abandono)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block font-bold text-slate-700 mb-1">
+                              Data Mov. / Chegada
+                            </label>
+                            <input
+                              type="text"
+                              value={formEdicaoAluno.dataMovimentacao}
+                              onChange={(e) =>
+                                setFormEdicaoAluno({
+                                  ...formEdicaoAluno,
+                                  dataMovimentacao: e.target.value
+                                })
+                              }
+                              placeholder="DD/MM"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-bold"
+                            />
+                          </div>
+
+                          <div className="md:col-span-4 space-y-2">
+                            <label className="block font-bold text-slate-700">
+                              Observações Acumulativas (Marque nos checkboxes ou digite abaixo):
+                            </label>
+                            <input
+                              type="text"
+                              value={formEdicaoAluno.observacoes}
+                              onChange={(e) =>
+                                setFormEdicaoAluno({
+                                  ...formEdicaoAluno,
+                                  observacoes: e.target.value
+                                })
+                              }
+                              placeholder="Ex: TIO TIAGO | @ | TEG | MS: 16/09"
+                              className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-semibold"
+                            />
+
+                            {/* Checkboxes Acumulativos (@, TEG, Tio Tiago, Tio Zezinho, etc.) */}
+                            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                              {tagsObsConfig.map((tag) => {
+                                const marcado = observacaoContemTag(
+                                  formEdicaoAluno.observacoes,
+                                  tag.sigla
+                                );
+                                return (
+                                  <label
+                                    key={tag.id}
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer select-none transition ${
+                                      marcado
+                                        ? tag.corClasse
+                                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={marcado}
+                                      onChange={(e) => {
+                                        const novoTexto = alternarTagNaObservacao(
+                                          formEdicaoAluno.observacoes,
+                                          tag.sigla,
+                                          e.target.checked
+                                        );
+                                        setFormEdicaoAluno({
+                                          ...formEdicaoAluno,
+                                          observacoes: novoTexto
+                                        });
+                                      }}
+                                      className="w-3.5 h-3.5 rounded"
+                                    />
+                                    <span>{tag.rotulo}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-indigo-200/60">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAlunoEmEdicaoKey(null);
+                              setFormEdicaoAluno(null);
+                            }}
+                            className="px-4 py-2 rounded-xl bg-white border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={salvarEdicaoDiretaAlunoNoSheets}
+                            disabled={salvandoEdicaoAluno}
+                            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            {salvandoEdicaoAluno ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Save className="w-3.5 h-3.5" />
+                            )}
+                            Salvar Alteração na Planilha (Google Sheets)
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -2010,7 +2682,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold cursor-pointer"
               >
                 <UserSearch className="w-4 h-4" />
-                Ir para Procurar Aluno (Ficha Completa)
+                Ir para Procurar e Editar Aluno
               </button>
             </div>
 
@@ -2136,67 +2808,194 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
       )}
 
       {/* ====================================================================
-          SUB-ABA 4: PASTA DO DRIVE & CONFIGURAÇÕES DA LISTA PILOTO
+          SUB-ABA 4: PASTA DO DRIVE, PERUAS ESCOLARES & CONFIGURAÇÕES
       ==================================================================== */}
       {currentSubTab === 'config' && (
-        <div className="max-w-3xl bg-white rounded-2xl border border-slate-200 p-6 space-y-5 shadow-xs">
-          <div>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800">
-              <Sparkles className="w-3.5 h-3.5" />
-              Configuração Exclusiva do Módulo Lista Piloto
-            </span>
-            <h2 className="text-lg font-bold text-slate-900 mt-1">
-              Pasta das Listas Piloto no Google Drive
-            </h2>
-            <p className="text-xs text-slate-600 mt-0.5">
-              Informe o link ou ID da pasta do Google Drive onde estão salvas as planilhas Google
-              Sheets das Listas Piloto (uma planilha por turma).
-            </p>
-          </div>
+        <div className="max-w-4xl space-y-6">
+          {/* Card 1: Pasta do Drive */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5 shadow-xs">
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800">
+                <Sparkles className="w-3.5 h-3.5" />
+                Conexão com Google Drive
+              </span>
+              <h2 className="text-lg font-bold text-slate-900 mt-1">
+                Pasta das Listas Piloto no Google Drive
+              </h2>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Informe o link ou ID da pasta do Google Drive onde estão salvas as planilhas Google
+                Sheets das Listas Piloto (uma planilha por turma).
+              </p>
+            </div>
 
-          <div className="space-y-3">
-            <label className="block text-xs font-bold text-slate-700">
-              Link ou ID da Pasta das Listas Piloto:
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={pastaInput}
-                onChange={(e) => setPastaInput(e.target.value)}
-                placeholder="https://drive.google.com/drive/folders/..."
-                className="flex-1 px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 focus:border-indigo-600 outline-none"
-              />
-              <button
-                onClick={() => carregarListasPilotoDoDrive(true)}
-                disabled={carregandoPiloto}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer disabled:opacity-50"
-              >
-                {carregandoPiloto ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
-                )}
-                Salvar e Carregar Pasta
-              </button>
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-slate-700">
+                Link ou ID da Pasta das Listas Piloto:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={pastaInput}
+                  onChange={(e) => setPastaInput(e.target.value)}
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  className="flex-1 px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 focus:border-indigo-600 outline-none"
+                />
+                <button
+                  onClick={() => carregarListasPilotoDoDrive(true)}
+                  disabled={carregandoPiloto}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer disabled:opacity-50"
+                >
+                  {carregandoPiloto ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4" />
+                  )}
+                  Salvar e Carregar Pasta
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 space-y-2">
+              <label className="block text-xs font-bold text-slate-700">
+                Data Padrão de Chegada (Matrícula Suplementar - MS):
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  value={dataChegadaPadrao}
+                  onChange={(e) => aplicarDataChegadaATodosNovos(e.target.value)}
+                  placeholder="DD/MM"
+                  className="w-28 px-3 py-2 text-xs font-bold text-center rounded-xl border border-slate-300"
+                />
+                <span className="text-xs text-slate-500">
+                  Preenchida automaticamente na coluna <code>DATA MOV.</code> e{' '}
+                  <code>OBSERVAÇÕES (MS: DD/MM)</code> quando um aluno novo ativo é detectado.
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-slate-100 space-y-2">
-            <label className="block text-xs font-bold text-slate-700">
-              Data Padrão de Chegada (Matrícula Suplementar - MS):
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                value={dataChegadaPadrao}
-                onChange={(e) => aplicarDataChegadaATodosNovos(e.target.value)}
-                placeholder="DD/MM"
-                className="w-28 px-3 py-2 text-xs font-bold text-center rounded-xl border border-slate-300"
-              />
-              <span className="text-xs text-slate-500">
-                Preenchida automaticamente na coluna <code>DATA MOV.</code> e{' '}
-                <code>OBSERVAÇÕES (MS: DD/MM)</code> quando um aluno novo ativo é detectado.
-              </span>
+          {/* Card 2: Configuração de Peruas Escolares, TEG, @ e Informações Extras de Observação */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900">
+                  <Bus className="w-3.5 h-3.5" />
+                  Peruas Escolares, TEG e Marcadores Acumulativos (Coluna OBS)
+                </span>
+                <h2 className="text-lg font-bold text-slate-900 mt-1">
+                  Configurar Peruas Escolares e Informações de Observação
+                </h2>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Configure quais peruas escolares (ex: <code>TIO TIAGO</code>,{' '}
+                  <code>TIO ZEZINHO</code>) e informações extras (<code>@</code> para quem vai
+                  sozinho, <code>TEG</code> para Transporte Escolar Gratuito) aparecem como
+                  checkboxes acumulativos e nos filtros de busca.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRestaurarTagsPadrao}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold shrink-0 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Restaurar Padrões
+              </button>
+            </div>
+
+            {/* Lista de Tags Atuais */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {tagsObsConfig.map((tag) => (
+                <div
+                  key={tag.id}
+                  className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-3"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded border text-xs font-extrabold ${tag.corClasse}`}
+                      >
+                        {tag.sigla}
+                      </span>
+                      <span className="text-[11px] font-bold uppercase text-slate-400">
+                        {tag.categoria}
+                      </span>
+                    </div>
+                    <div className="text-xs font-semibold text-slate-700 mt-1">{tag.rotulo}</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRemoverTag(tag.id)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                    title="Remover este marcador"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Adicionar Nova Perua Escolar ou Marcador */}
+            <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-3">
+              <h3 className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                <Plus className="w-4 h-4 text-indigo-600" />
+                Adicionar Nova Perua Escolar ou Marcador de Observação
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Texto na Coluna OBS *
+                  </label>
+                  <input
+                    type="text"
+                    value={novaTagSigla}
+                    onChange={(e) => setNovaTagSigla(e.target.value)}
+                    placeholder="Ex: TIO JOÃO"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-bold uppercase"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Categoria</label>
+                  <select
+                    value={novaTagCategoria}
+                    onChange={(e) => setNovaTagCategoria(e.target.value as any)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white font-bold"
+                  >
+                    <option value="PERUA">Perua Escolar</option>
+                    <option value="TRANSPORTE">Transporte (Ex: TEG)</option>
+                    <option value="SAIDA">Saída (Ex: @ Sozinho)</option>
+                    <option value="OUTRO">Outro Marcador</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Descrição no Filtro (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={novaTagRotulo}
+                    onChange={(e) => setNovaTagRotulo(e.target.value)}
+                    placeholder="Ex: Perua: TIO JOÃO"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={handleAdicionarNovaTag}
+                    className="w-full px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Incluir Marcador
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

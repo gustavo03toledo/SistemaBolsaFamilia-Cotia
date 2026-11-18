@@ -1,15 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   GraduationCap,
+  Image as ImageIcon,
   Printer,
   RotateCcw,
   School,
   Search,
   Settings2,
   Sparkles,
+  Upload,
   UserCheck,
   Users
 } from 'lucide-react';
+import {
+  obterPapelTimbradoUrl,
+  processarESalvarPapelTimbradoArquivo,
+  restaurarPapelTimbradoPadrao,
+  temPapelTimbradoCustomizado
+} from '../services/configEscolarStore';
 import { obterNomeTurmaDaPlanilha } from '../services/sedExtractor';
 import { TurmaListaPilotoDrive } from '../types/sbf';
 
@@ -171,6 +179,32 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
     return CONFIG_ESCOLA_PADRAO;
   });
   const [mostrarConfigEscola, setMostrarConfigEscola] = useState<boolean>(false);
+  const [papelTimbradoUrl, setPapelTimbradoUrl] = useState<string>(() =>
+    obterPapelTimbradoUrl()
+  );
+  const [ehTimbradoCustom, setEhTimbradoCustom] = useState<boolean>(() =>
+    temPapelTimbradoCustomizado()
+  );
+
+  async function handleAlterarPapelTimbrado(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const novaUrl = await processarESalvarPapelTimbradoArquivo(file);
+      setPapelTimbradoUrl(novaUrl);
+      setEhTimbradoCustom(true);
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao carregar imagem do papel timbrado.');
+    } finally {
+      e.target.value = '';
+    }
+  }
+
+  function handleRestaurarTimbradoOriginal() {
+    const padrao = restaurarPapelTimbradoPadrao();
+    setPapelTimbradoUrl(padrao);
+    setEhTimbradoCustom(false);
+  }
 
   useEffect(() => {
     try {
@@ -463,7 +497,7 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
           width: '210mm',
           minHeight: '297mm',
           maxHeight: '297mm',
-          backgroundImage: "url('/timbrado-cotia.png')",
+          backgroundImage: `url('${papelTimbradoUrl}')`,
           backgroundSize: '100% 100%',
           backgroundRepeat: 'no-repeat',
           backgroundPosition: 'top center',
@@ -678,6 +712,29 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            <label className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 text-xs font-bold transition cursor-pointer">
+              <ImageIcon className="w-4 h-4 text-indigo-600" />
+              Alterar Papel Timbrado
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={handleAlterarPapelTimbrado}
+                className="hidden"
+              />
+            </label>
+
+            {ehTimbradoCustom && (
+              <button
+                type="button"
+                onClick={handleRestaurarTimbradoOriginal}
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition cursor-pointer"
+                title="Voltar ao papel timbrado original da Educação de Cotia"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Timbrado Padrão
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setMostrarConfigEscola(!mostrarConfigEscola)}
