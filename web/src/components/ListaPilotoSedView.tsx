@@ -200,7 +200,6 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
   const [filtroBolsaProcurar, setFiltroBolsaProcurar] = useState<
     'TODOS' | 'BOLSA_FAMILIA' | 'APENAS_ATIVOS'
   >('TODOS');
-  const [filtroImagemProcurar, setFiltroImagemProcurar] = useState<string>('TODOS');
 
   // Estado para a sub-aba "Turmas & Listas Piloto"
   const [turmaSelecionadaConsulta, setTurmaSelecionadaConsulta] = useState<string>('');
@@ -713,9 +712,6 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
         ) {
           return false;
         }
-        if (filtroImagemProcurar !== 'TODOS') {
-          if (item.infoImagem.sigla !== filtroImagemProcurar) return false;
-        }
         if (!q) return true;
         return (
           item.aluno.nome.toUpperCase().includes(q) ||
@@ -727,12 +723,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
         );
       })
       .slice(0, 60);
-  }, [
-    todosAlunosEnriquecidos,
-    termoProcurarAluno,
-    filtroBolsaProcurar,
-    filtroImagemProcurar
-  ]);
+  }, [todosAlunosEnriquecidos, termoProcurarAluno, filtroBolsaProcurar]);
 
   const turmaAtivaDetalhe = useMemo(() => {
     return (
@@ -1713,14 +1704,14 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
               <div>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-bold">
                   <Sparkles className="w-3.5 h-3.5" />
-                  Consulta Unificada • Lista Piloto + Direito de Imagem + Bolsa Família
+                  Consulta Unificada • Lista Piloto + Bolsa Família
                 </span>
                 <h2 className="text-lg font-extrabold text-slate-900 mt-1">
                   Procurar Aluno na Escola (Ficha Completa)
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Consulte Nome, RA, RM, Turma, Horário, Situação, Direito de Imagem (IM),
-                  Observações e verifique se o aluno é cadastrado no Bolsa Família.
+                  Consulte Nome, RA, RM, Turma, Horário, Situação, Observações e verifique se o
+                  aluno é cadastrado no Bolsa Família.
                 </p>
               </div>
 
@@ -1731,8 +1722,8 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
               </div>
             </div>
 
-            {/* Barra de Pesquisa e Filtros Rápidos */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
+            {/* Barra de Pesquisa e Filtro Rápido */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
               <div className="md:col-span-2 relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -1755,21 +1746,6 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                   <option value="BOLSA_FAMILIA">Apenas Cadastrados no Bolsa Família</option>
                 </select>
               </div>
-
-              <div>
-                <select
-                  value={filtroImagemProcurar}
-                  onChange={(e) => setFiltroImagemProcurar(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-800"
-                >
-                  <option value="TODOS">Direito de Imagem (IM): Todos</option>
-                  <option value="P+UE">IM: P+UE (Público + Unidade Escolar)</option>
-                  <option value="P">IM: P (Público)</option>
-                  <option value="UE">IM: UE (Unidade Escolar)</option>
-                  <option value="NÃO">IM: NÃO (Não Autorizado)</option>
-                  <option value="EM BRANCO">IM: Em branco (Sem informação)</option>
-                </select>
-              </div>
             </div>
           </div>
 
@@ -1783,172 +1759,155 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
               Nenhum aluno encontrado para os filtros informados.
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="flex flex-col space-y-3">
               {alunosFiltradosProcurar.map((item, idx) => {
-                const { aluno, turma, nomeTurmaExibicao, horarioPadrao, infoBolsa, infoImagem } =
-                  item;
+                const { aluno, turma, nomeTurmaExibicao, horarioPadrao, infoBolsa } = item;
                 const ehAtivo = aluno.situacaoNormalizada === 'ATIVO';
 
                 return (
                   <div
                     key={`${turma.idUnico}-${aluno.nr}-${idx}`}
-                    className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:border-indigo-300 transition flex flex-col justify-between space-y-4"
+                    className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs hover:border-indigo-300 transition space-y-3"
                   >
-                    <div className="space-y-3">
-                      {/* Topo da Ficha: Nome + Status Ativo/Movimentado + Badge Bolsa Família */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-base font-extrabold text-slate-900">
-                              {aluno.nome}
-                            </h3>
+                    {/* Topo da Ficha: Nome + Status Ativo/Movimentado + Badge Bolsa Família */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base font-extrabold text-slate-900">{aluno.nome}</h3>
+                          <button
+                            onClick={() =>
+                              copiarTexto(aluno.nome, `ficha-nome-${turma.idUnico}-${aluno.nr}`)
+                            }
+                            className="text-slate-400 hover:text-indigo-600"
+                            title="Copiar nome"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          Turma: <strong className="text-indigo-700">{nomeTurmaExibicao}</strong>
+                          {turma.professora ? ` • Profª ${turma.professora}` : ''} • Horário:{' '}
+                          <strong>{horarioPadrao}</strong>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                            ehAtivo
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-200 text-amber-950'
+                          }`}
+                        >
+                          {ehAtivo
+                            ? 'ATIVO'
+                            : `${aluno.situacaoNormalizada}${
+                                aluno.dataMovimentacao ? ` (${aluno.dataMovimentacao})` : ''
+                              }`}
+                        </span>
+
+                        {infoBolsa ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold">
+                            <HeartHandshake className="w-3 h-3" />
+                            BOLSA FAMÍLIA: SIM
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-semibold">
+                            Bolsa Família: Não consta
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Linha de Dados Escolares (RM, Nº, RA, Nascimento, Observações) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100 text-xs">
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] font-bold uppercase text-slate-400">
+                          RM (Unidade)
+                        </div>
+                        <div className="font-extrabold text-slate-900 text-sm mt-0.5">
+                          {aluno.rm || 'Não inf.'}
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] font-bold uppercase text-slate-400">
+                          Nº Chamada
+                        </div>
+                        <div className="font-extrabold text-slate-900 text-sm mt-0.5">
+                          Nº {aluno.nr}
+                        </div>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] font-bold uppercase text-slate-400">
+                          R.A. do Aluno
+                        </div>
+                        <div className="font-extrabold text-slate-900 font-mono text-xs mt-0.5 flex items-center gap-1">
+                          <span>{aluno.ra || 'Não inf.'}</span>
+                          {aluno.ra && (
                             <button
                               onClick={() =>
-                                copiarTexto(aluno.nome, `ficha-nome-${turma.idUnico}-${aluno.nr}`)
+                                copiarTexto(aluno.ra, `ficha-ra-${turma.idUnico}-${aluno.nr}`)
                               }
                               className="text-slate-400 hover:text-indigo-600"
-                              title="Copiar nome"
                             >
-                              <Copy className="w-3.5 h-3.5" />
+                              <Copy className="w-3 h-3" />
                             </button>
-                          </div>
-                          <div className="text-xs text-slate-500 mt-0.5">
-                            Turma: <strong className="text-indigo-700">{nomeTurmaExibicao}</strong>
-                            {turma.professora ? ` • Profª ${turma.professora}` : ''} • Horário:{' '}
-                            <strong>{horarioPadrao}</strong>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                              ehAtivo
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-200 text-amber-950'
-                            }`}
-                          >
-                            {ehAtivo
-                              ? 'ATIVO'
-                              : `${aluno.situacaoNormalizada}${
-                                  aluno.dataMovimentacao ? ` (${aluno.dataMovimentacao})` : ''
-                                }`}
-                          </span>
-
-                          {infoBolsa ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold">
-                              <HeartHandshake className="w-3 h-3" />
-                              BOLSA FAMÍLIA: SIM
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-semibold">
-                              Bolsa Família: Não consta
-                            </span>
                           )}
                         </div>
                       </div>
 
-                      {/* Grade de Dados Escolares (RM, Nº, RA, Nascimento, IM) */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100 text-xs">
-                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                          <div className="text-[10px] font-bold uppercase text-slate-400">
-                            RM (Unidade)
-                          </div>
-                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">
-                            {aluno.rm || 'Não inf.'}
-                          </div>
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className="text-[10px] font-bold uppercase text-slate-400">
+                          Nascimento
                         </div>
-
-                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                          <div className="text-[10px] font-bold uppercase text-slate-400">
-                            Nº Chamada
-                          </div>
-                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">
-                            Nº {aluno.nr}
-                          </div>
-                        </div>
-
-                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                          <div className="text-[10px] font-bold uppercase text-slate-400">
-                            R.A. do Aluno
-                          </div>
-                          <div className="font-extrabold text-slate-900 font-mono text-xs mt-0.5 flex items-center gap-1">
-                            <span>{aluno.ra || 'Não inf.'}</span>
-                            {aluno.ra && (
-                              <button
-                                onClick={() =>
-                                  copiarTexto(aluno.ra, `ficha-ra-${turma.idUnico}-${aluno.nr}`)
-                                }
-                                className="text-slate-400 hover:text-indigo-600"
-                              >
-                                <Copy className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                          <div className="text-[10px] font-bold uppercase text-slate-400">
-                            Nascimento
-                          </div>
-                          <div className="font-extrabold text-slate-900 text-xs mt-0.5">
-                            {aluno.dataNascimento || 'Não inf.'}
-                          </div>
+                        <div className="font-extrabold text-slate-900 text-xs mt-0.5">
+                          {aluno.dataNascimento || 'Não inf.'}
                         </div>
                       </div>
-
-                      {/* Direito de Imagem (IM) e Observações */}
-                      <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <div
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border font-bold text-[11px] ${infoImagem.corClasse}`}
-                        >
-                          <Camera className="w-3.5 h-3.5" />
-                          <span>Direito de Imagem (IM): {infoImagem.rotulo}</span>
-                        </div>
-
-                        {aluno.observacoes && (
-                          <div className="px-3 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-[11px] font-semibold">
-                            Obs: <strong>{aluno.observacoes}</strong>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Dados do Bolsa Família quando o aluno é beneficiário */}
-                      {infoBolsa && (
-                        <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-950 space-y-1">
-                          <div className="font-bold flex items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                              <HeartHandshake className="w-4 h-4 text-emerald-600" />
-                              Dados no Programa Bolsa Família
-                            </span>
-                            {infoBolsa.nis && (
-                              <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-emerald-200">
-                                NIS: {infoBolsa.nis}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-emerald-800">
-                            {infoBolsa.responsavel && (
-                              <span>
-                                Responsável: <strong>{infoBolsa.responsavel}</strong>
-                              </span>
-                            )}
-                            {infoBolsa.frequenciaPercentual && (
-                              <span>
-                                Frequência Ciclo: <strong>{infoBolsa.frequenciaPercentual}</strong>
-                              </span>
-                            )}
-                            {infoBolsa.statusCiclo && (
-                              <span>
-                                Status: <strong>{infoBolsa.statusCiclo}</strong>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )}
                     </div>
 
+                    {aluno.observacoes && (
+                      <div className="px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-xs font-semibold">
+                        Observações: <strong>{aluno.observacoes}</strong>
+                      </div>
+                    )}
+
+                    {/* Dados do Bolsa Família quando o aluno é beneficiário */}
+                    {infoBolsa && (
+                      <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-950 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="font-bold flex items-center gap-1.5">
+                            <HeartHandshake className="w-4 h-4 text-emerald-600" />
+                            Programa Bolsa Família
+                          </span>
+                          {infoBolsa.responsavel && (
+                            <span className="text-[11px] text-emerald-800">
+                              Responsável: <strong>{infoBolsa.responsavel}</strong>
+                            </span>
+                          )}
+                          {infoBolsa.frequenciaPercentual && (
+                            <span className="text-[11px] text-emerald-800">
+                              Frequência Ciclo: <strong>{infoBolsa.frequenciaPercentual}</strong>
+                            </span>
+                          )}
+                          {infoBolsa.statusCiclo && (
+                            <span className="text-[11px] text-emerald-800">
+                              Status: <strong>{infoBolsa.statusCiclo}</strong>
+                            </span>
+                          )}
+                        </div>
+                        {infoBolsa.nis && (
+                          <span className="font-mono font-bold bg-white px-2.5 py-0.5 rounded border border-emerald-200 text-xs">
+                            NIS: {infoBolsa.nis}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {/* Botões Rápidos para Emitir Declaração deste Aluno */}
-                    <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                    <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                       {onAbrirDeclaracaoAluno && (
                         <div className="flex flex-wrap items-center gap-1.5">
                           <button

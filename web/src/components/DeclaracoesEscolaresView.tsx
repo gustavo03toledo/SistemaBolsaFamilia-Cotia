@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  CheckSquare,
-  FileCheck2,
   GraduationCap,
   Printer,
   RotateCcw,
@@ -9,7 +7,6 @@ import {
   Search,
   Settings2,
   Sparkles,
-  Square,
   UserCheck,
   Users
 } from 'lucide-react';
@@ -41,7 +38,6 @@ interface ConfigCabecalhoEscola {
   email: string;
   cidade: string;
   cargoAssinatura: string;
-  exibirObsValidade: boolean;
   exibirCaixaCheckModelo: boolean;
 }
 
@@ -55,7 +51,6 @@ const CONFIG_ESCOLA_PADRAO: ConfigCabecalhoEscola = {
   email: 'emjardimpanorama@cotia.sp.gov.br',
   cidade: 'Cotia',
   cargoAssinatura: 'Direção / Secretaria Escolar',
-  exibirObsValidade: true,
   exibirCaixaCheckModelo: true
 };
 
@@ -166,7 +161,6 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
   alunoInicial,
   onClearAlunoInicial
 }) => {
-  // Configuração institucional da escola (persistida localmente)
   const [configEscola, setConfigEscola] = useState<ConfigCabecalhoEscola>(() => {
     try {
       const salvo = localStorage.getItem(STORAGE_KEY_CONFIG_ESCOLA_DEC);
@@ -196,8 +190,13 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
     String(anoReferencia || hoje.getFullYear())
   );
 
+  // Texto editável da Observação (OBS.: no rodapé da declaração)
+  const [textoObservacao, setTextoObservacao] = useState<string>(
+    'Esta declaração só é válida sem rasuras.'
+  );
+
   // =========================================================================
-  // ESTADO DOS CAMPOS: DECLARAÇÃO INDIVIDUAL (MATRÍCULA / TRANSFERÊNCIA / CONCLUSÃO INDIVIDUAL)
+  // ESTADO DOS CAMPOS: DECLARAÇÃO INDIVIDUAL
   // =========================================================================
   const [buscaAluno, setBuscaAluno] = useState<string>('');
   const [mostrarSugestoes, setMostrarSugestoes] = useState<boolean>(false);
@@ -213,7 +212,6 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
   );
   const [horarioInicio, setHorarioInicio] = useState<string>('07:00');
   const [horarioFim, setHorarioFim] = useState<string>('11:40');
-  const [observacaoExtra, setObservacaoExtra] = useState<string>('');
 
   // Campos de Solicitação de Transferência
   const [serieAnoTransferencia, setSerieAnoTransferencia] = useState<string>('1º ANO');
@@ -221,7 +219,9 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
   const [modalidadeTransferencia, setModalidadeTransferencia] = useState<string>(
     'Ensino Fundamental de 9 anos'
   );
-  const [prazoEntregaDias, setPrazoEntregaDias] = useState<string>('40 dias');
+  const [textoHistoricoTransferencia, setTextoHistoricoTransferencia] = useState<string>(
+    'Seu histórico/documentação será entregue em 40 dias.'
+  );
   const [destacarPrazoAmarelo, setDestacarPrazoAmarelo] = useState<boolean>(true);
 
   // Campos de Conclusão (Individual e em Lote)
@@ -249,7 +249,7 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
     }>
   >([]);
 
-  // Unificar base de alunos para busca rápida (priorizando Listas Piloto que já têm RA e Nascimento!)
+  // Unificar base de alunos para busca rápida
   const baseAlunosUnificada = useMemo<CandidatoAlunoDeclaracaoGeral[]>(() => {
     const mapa = new Map<string, CandidatoAlunoDeclaracaoGeral>();
 
@@ -357,7 +357,6 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
     setModalidadeConclusao(info.modalidade);
   }
 
-  // Preencher aluno inicial vindo de outra tela (ex: Ficha do Aluno na Lista Piloto)
   useEffect(() => {
     if (!alunoInicial?.nome) return;
     const match = baseAlunosUnificada.find(
@@ -382,7 +381,6 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
     if (onClearAlunoInicial) onClearAlunoInicial();
   }, [alunoInicial]);
 
-  // Inicializar turma padrão para o modo Lote de Conclusão (priorizando 5º Ano se existir)
   useEffect(() => {
     if (turmasPiloto.length > 0 && !turmaLoteId) {
       const quintoAno =
@@ -444,6 +442,7 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
 
   // =========================================================================
   // RENDERIZADOR DE UMA PÁGINA A4 TIMBRADA OFICIAL DA DECLARAÇÃO
+  // (Usa backgroundImage igual à Declaração com Faltas para sair em 1 única folha A4)
   // =========================================================================
   function renderFolhaDeclaracaoA4(
     dadosAluno: {
@@ -457,189 +456,187 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
     return (
       <div
         key={keyIndex}
-        className={`declaracao-a4-sheet bg-white shadow-xl mx-auto relative overflow-hidden text-black print:shadow-none ${
-          isQuebraPagina ? 'print:break-after-page mb-8 print:mb-0' : ''
+        className={`declaracao-a4-sheet bg-white shadow-2xl border border-slate-300 relative text-black mx-auto ${
+          isQuebraPagina ? 'declaracao-lote-break mb-8 print:mb-0' : ''
         }`}
         style={{
           width: '210mm',
           minHeight: '297mm',
+          maxHeight: '297mm',
+          backgroundImage: "url('/timbrado-cotia.png')",
+          backgroundSize: '100% 100%',
+          backgroundRepeat: 'no-repeat',
+          backgroundPosition: 'top center',
           paddingTop: '42mm',
-          paddingBottom: '32mm',
-          paddingLeft: '22mm',
-          paddingRight: '22mm',
-          fontFamily: '"Comic Sans MS", "Trebuchet MS", Arial, sans-serif'
+          paddingBottom: '28mm',
+          paddingLeft: '20mm',
+          paddingRight: '20mm',
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          fontFamily: '"Comic Sans MS", "Trebuchet MS", Calibri, Arial, sans-serif'
         }}
       >
-        {/* Papel Timbrado Oficial de Fundo (Cotia Educação) */}
-        <img
-          src="/timbrado-cotia.png"
-          alt="Papel Timbrado Secretaria Municipal de Educação de Cotia"
-          className="absolute inset-0 w-full h-full object-fill pointer-events-none select-none z-0"
-        />
-
-        <div className="relative z-10 flex flex-col justify-between h-full min-h-[218mm]">
-          <div>
-            {/* Identificação da Unidade Escolar no Topo */}
-            <div className="text-center space-y-0.5 mb-8 text-[12.5px] leading-snug">
-              <div className="font-bold uppercase tracking-wide text-[13.5px]">
-                {configEscola.nomeCurto}
-              </div>
-              <div>{configEscola.endereco}</div>
-              <div>Tel.: {configEscola.telefone}</div>
-              <div>
-                E-mail:{' '}
-                <span className="underline text-blue-800 print:text-black">
-                  {configEscola.email}
-                </span>
-              </div>
+        {/* TOPO E CORPO DA DECLARAÇÃO */}
+        <div>
+          {/* Identificação da Unidade Escolar no Topo */}
+          <div className="text-center space-y-0.5 mb-7 text-[12px] leading-snug">
+            <div className="font-bold uppercase tracking-wide text-[13px]">
+              {configEscola.nomeCurto}
             </div>
-
-            {/* Título Central */}
-            <h1 className="text-center font-bold text-[22px] tracking-wider uppercase mb-10 underline decoration-1 underline-offset-4">
-              DECLARAÇÃO
-            </h1>
-
-            {/* Parágrafo de Identificação do Aluno */}
-            <div className="text-[15px] leading-relaxed space-y-4 mb-10">
-              <p className="indent-10 text-justify">
-                A Direção da <strong className="uppercase">{configEscola.nomeExtenso}</strong>{' '}
-                declara para os devidos fins que,
-              </p>
-
-              <div className="border-b border-black pb-1 font-bold text-[16px] uppercase tracking-wide text-center min-h-[28px]">
-                {dadosAluno.nome || '____________________________________________________'}
-              </div>
-
-              <div className="flex items-baseline justify-between gap-4 pt-1 text-[14.5px]">
-                <div className="flex-1 flex items-baseline gap-2">
-                  <span>R.A./R.G:</span>
-                  <span className="flex-1 border-b border-black font-bold px-2 text-center">
-                    {dadosAluno.ra || '_______________________'}
-                  </span>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span>Nascido(a) aos:</span>
-                  <span className="border-b border-black font-bold px-3 min-w-[130px] text-center">
-                    {dadosAluno.dataNascimento || '____/____/________'}
-                  </span>
-                  <span>.</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Corpo Específico de Cada Tipo de Declaração */}
-            <div className="mt-10 mb-8">
-              {tipoDeclaracao === 'matricula' && (
-                <div className="flex items-start gap-4 text-[15.5px] leading-loose">
-                  {configEscola.exibirCaixaCheckModelo && (
-                    <div className="w-9 h-9 border-2 border-black flex items-center justify-center font-bold text-lg shrink-0 mt-1">
-                      X
-                    </div>
-                  )}
-                  <p className="text-justify flex-1">
-                    É aluno(a) regularmente matriculado(a) e está frequentando até a presente data o{' '}
-                    <strong className="underline px-1.5 uppercase">
-                      {anoTurmaMatricula || '_______ ANO'}
-                    </strong>{' '}
-                    do <strong>{cicloEnsinoMatricula || 'Ciclo I do Ensino Fundamental'}</strong>{' '}
-                    nesta Unidade Escolar no horário das{' '}
-                    <strong className="underline px-1.5">{horarioInicio || '07:00'}</strong> às{' '}
-                    <strong className="underline px-1.5">{horarioFim || '11:40'}</strong> horas.
-                  </p>
-                </div>
-              )}
-
-              {tipoDeclaracao === 'transferencia' && (
-                <div className="flex items-start gap-4 text-[15.5px] leading-loose">
-                  {configEscola.exibirCaixaCheckModelo && (
-                    <div className="w-9 h-9 border-2 border-black flex items-center justify-center font-bold text-lg shrink-0 mt-1">
-                      X
-                    </div>
-                  )}
-                  <div className="flex-1 space-y-3">
-                    <p className="text-justify">
-                      Solicitou, nesta data, sua transferência para outra Unidade Escolar, com
-                      direito de matricular-se no{' '}
-                      <strong className="underline px-2 uppercase">
-                        {serieAnoTransferencia || '_____ ANO'}
-                      </strong>{' '}
-                      do Ciclo{' '}
-                      <strong className="underline px-2">{cicloTransferencia || 'I'}</strong> do{' '}
-                      <strong className="underline px-2">
-                        {modalidadeTransferencia || 'Ensino Fundamental de 9 anos'}
-                      </strong>
-                      .
-                    </p>
-                    <p>
-                      <span
-                        className={
-                          destacarPrazoAmarelo ? 'bg-yellow-300 px-1.5 py-0.5 font-semibold' : 'font-semibold'
-                        }
-                      >
-                        Seu histórico/documentação será entregue em {prazoEntregaDias || '40 dias'}.
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {tipoDeclaracao === 'conclusao' && (
-                <div className="flex items-start gap-4 text-[15.5px] leading-loose">
-                  {configEscola.exibirCaixaCheckModelo && (
-                    <div className="w-9 h-9 border-2 border-black flex items-center justify-center font-bold text-lg shrink-0 mt-1">
-                      X
-                    </div>
-                  )}
-                  <p className="text-justify flex-1">
-                    Concluiu o(a){' '}
-                    <strong className="underline px-2 uppercase">
-                      {serieAnoConclusao || '5º ANO'}
-                    </strong>{' '}
-                    do Ciclo{' '}
-                    <strong className="underline px-2">{cicloConclusao || 'I'}</strong> do(a){' '}
-                    <strong className="underline px-2 uppercase">
-                      {modalidadeConclusao || 'ENSINO FUNDAMENTAL'}
-                    </strong>
-                    , no ano letivo de{' '}
-                    <strong className="underline px-2">{anoLetivoConclusao || '2026'}</strong>,
-                    nesta Unidade Escolar.
-                  </p>
-                </div>
-              )}
-
-              {observacaoExtra.trim() && (
-                <div className="mt-6 text-[14px] leading-relaxed border-t border-slate-300 pt-3">
-                  <strong>Observação:</strong> {observacaoExtra}
-                </div>
-              )}
+            <div>{configEscola.endereco}</div>
+            <div>Tel.: {configEscola.telefone}</div>
+            <div>
+              E-mail:{' '}
+              <span className="underline text-blue-800 print:text-black">
+                {configEscola.email}
+              </span>
             </div>
           </div>
 
-          {/* Rodapé com OBS, Data e Assinatura */}
-          <div className="space-y-12 pt-8 text-[14.5px]">
-            {configEscola.exibirObsValidade && (
-              <p className="text-[13.5px]">
-                <strong className="underline">OBS.:</strong> Esta declaração só é válida sem
-                rasuras.
-              </p>
-            )}
+          {/* Título Central */}
+          <h1 className="text-center font-bold text-[21px] tracking-wider uppercase mb-8 underline decoration-1 underline-offset-4">
+            DECLARAÇÃO
+          </h1>
 
-            <div className="text-right pr-4 text-[15px]">
-              {configEscola.cidade},{' '}
-              <span className="inline-block border-b border-black min-w-[36px] text-center font-semibold">
-                {diaEmissao}
-              </span>{' '}
-              de{' '}
-              <span className="inline-block border-b border-black min-w-[130px] text-center font-semibold">
-                {mesEmissao}
-              </span>{' '}
-              de <span className="font-semibold">{anoEmissao}</span>.
+          {/* Parágrafo de Identificação do Aluno */}
+          <div className="text-[14.5px] leading-relaxed space-y-4 mb-9">
+            <p className="indent-10 text-justify">
+              A Direção da <strong className="uppercase">{configEscola.nomeExtenso}</strong>{' '}
+              declara para os devidos fins que,
+            </p>
+
+            <div className="border-b border-black pb-1 font-bold text-[15.5px] uppercase tracking-wide text-center min-h-[26px]">
+              {dadosAluno.nome || '____________________________________________________'}
             </div>
 
-            <div className="pt-8 flex flex-col items-end pr-4">
-              <div className="w-80 border-t border-black pt-1.5 text-center text-[13px] font-semibold">
-                {configEscola.cargoAssinatura}
+            <div className="flex items-baseline justify-between gap-4 pt-1 text-[14px]">
+              <div className="flex-1 flex items-baseline gap-2">
+                <span>R.A./R.G:</span>
+                <span className="flex-1 border-b border-black font-bold px-2 text-center">
+                  {dadosAluno.ra || '_______________________'}
+                </span>
               </div>
+              <div className="flex items-baseline gap-2">
+                <span>Nascido (a) aos:</span>
+                <span className="border-b border-black font-bold px-3 min-w-[125px] text-center">
+                  {dadosAluno.dataNascimento || '____/____/________'}
+                </span>
+                <span>.</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Corpo Específico de Cada Tipo de Declaração */}
+          <div className="mt-8 mb-6">
+            {tipoDeclaracao === 'matricula' && (
+              <div className="flex items-start gap-4 text-[15px] leading-loose">
+                {configEscola.exibirCaixaCheckModelo && (
+                  <div className="w-8 h-8 border-2 border-black flex items-center justify-center font-bold text-base shrink-0 mt-1.5">
+                    X
+                  </div>
+                )}
+                <p className="text-justify flex-1">
+                  É aluno(a) regularmente matriculado(a) e está frequentando até a presente data o{' '}
+                  <strong className="underline px-1.5 uppercase">
+                    {anoTurmaMatricula || '_______ ANO'}
+                  </strong>{' '}
+                  do <strong>{cicloEnsinoMatricula || 'Ciclo I do Ensino Fundamental'}</strong>{' '}
+                  nesta Unidade Escolar no horário das{' '}
+                  <strong className="underline px-1.5">{horarioInicio || '07:00'}</strong> às{' '}
+                  <strong className="underline px-1.5">{horarioFim || '11:40'}</strong> horas.
+                </p>
+              </div>
+            )}
+
+            {tipoDeclaracao === 'transferencia' && (
+              <div className="flex items-start gap-4 text-[15px] leading-loose">
+                {configEscola.exibirCaixaCheckModelo && (
+                  <div className="w-8 h-8 border-2 border-black flex items-center justify-center font-bold text-base shrink-0 mt-1.5">
+                    X
+                  </div>
+                )}
+                <div className="flex-1 space-y-2.5">
+                  <p className="text-justify">
+                    Solicitou, nesta data, sua transferência para outra Unidade Escolar, com
+                    direito de matricular-se no{' '}
+                    <strong className="underline px-2 uppercase">
+                      {serieAnoTransferencia || '_____ ANO'}
+                    </strong>{' '}
+                    do Ciclo{' '}
+                    <strong className="underline px-2">{cicloTransferencia || 'I'}</strong> do{' '}
+                    <strong className="underline px-2">
+                      {modalidadeTransferencia || 'Ensino Fundamental de 9 anos'}
+                    </strong>
+                    .
+                  </p>
+                  {textoHistoricoTransferencia.trim() && (
+                    <p>
+                      <span
+                        className={
+                          destacarPrazoAmarelo
+                            ? 'bg-yellow-300 px-1.5 py-0.5 font-semibold'
+                            : 'font-semibold'
+                        }
+                      >
+                        {textoHistoricoTransferencia}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {tipoDeclaracao === 'conclusao' && (
+              <div className="flex items-start gap-4 text-[15px] leading-loose">
+                {configEscola.exibirCaixaCheckModelo && (
+                  <div className="w-8 h-8 border-2 border-black flex items-center justify-center font-bold text-base shrink-0 mt-1.5">
+                    X
+                  </div>
+                )}
+                <p className="text-justify flex-1">
+                  Concluiu o(a){' '}
+                  <strong className="underline px-2 uppercase">
+                    {serieAnoConclusao || '5º ANO'}
+                  </strong>{' '}
+                  do Ciclo{' '}
+                  <strong className="underline px-2">{cicloConclusao || 'I'}</strong> do(a){' '}
+                  <strong className="underline px-2 uppercase">
+                    {modalidadeConclusao || 'ENSINO FUNDAMENTAL'}
+                  </strong>
+                  , no ano letivo de{' '}
+                  <strong className="underline px-2">{anoLetivoConclusao || '2026'}</strong>,
+                  nesta Unidade Escolar.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RODAPÉ COM OBS EDITÁVEL, DATA E ASSINATURA */}
+        <div className="space-y-8 text-[14px]">
+          {textoObservacao.trim() && (
+            <p className="text-[13.5px] whitespace-pre-line">
+              <strong className="underline">OBS.:</strong> {textoObservacao}
+            </p>
+          )}
+
+          <div className="text-right pr-4 text-[14.5px]">
+            {configEscola.cidade},{' '}
+            <span className="inline-block border-b border-black min-w-[34px] text-center font-semibold">
+              {diaEmissao}
+            </span>{' '}
+            de{' '}
+            <span className="inline-block border-b border-black min-w-[120px] text-center font-semibold">
+              {mesEmissao}
+            </span>{' '}
+            de <span className="font-semibold">{anoEmissao}</span>.
+          </div>
+
+          <div className="pt-6 flex flex-col items-end pr-4">
+            <div className="w-80 border-t border-black pt-1.5 text-center text-[12.5px] font-semibold">
+              {configEscola.cargoAssinatura}
             </div>
           </div>
         </div>
@@ -648,7 +645,7 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
   }
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 print:space-y-0">
       {/* PAINEL DE CONTROLE E CONFIGURAÇÃO (OCULTO NA IMPRESSÃO) */}
       <div className="no-print space-y-5">
         {/* Cabeçalho do Tipo de Declaração */}
@@ -674,7 +671,7 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
               {tipoDeclaracao === 'matricula' &&
                 'Preenche automaticamente Nome, RA, Nascimento, Ano/Turma e Horário (Manhã 07:00 às 11:40 | Tarde 13:00 às 17:40), sem o trecho de faltas.'}
               {tipoDeclaracao === 'transferencia' &&
-                'Declaração oficial de solicitação de transferência com direito à matrícula e prazo de entrega do histórico escolar.'}
+                'Declaração oficial de solicitação de transferência com texto de entrega de histórico e observação 100% editáveis.'}
               {tipoDeclaracao === 'conclusao' &&
                 'Permite emitir para um aluno específico ou gerar em lote para todos os alunos ativos de uma turma de uma só vez.'}
             </p>
@@ -826,23 +823,6 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
                   Exibir quadro marcado <code>[ X ]</code> igual ao modelo impresso
                 </span>
               </label>
-
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={configEscola.exibirObsValidade}
-                  onChange={(e) =>
-                    setConfigEscola({
-                      ...configEscola,
-                      exibirObsValidade: e.target.checked
-                    })
-                  }
-                  className="w-4 h-4 rounded border-slate-300 text-amber-600"
-                />
-                <span className="font-semibold text-slate-700">
-                  Exibir observação de validade sem rasuras no rodapé
-                </span>
-              </label>
             </div>
           </div>
         )}
@@ -956,6 +936,50 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
                   onChange={(e) => setAnoLetivoConclusao(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold text-center"
                 />
+              </div>
+            </div>
+
+            {/* Observação e Data no Modo Lote */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 mb-1">
+                  Observação da Declaração (OBS.: no rodapé — editável)
+                </label>
+                <input
+                  type="text"
+                  value={textoObservacao}
+                  onChange={(e) => setTextoObservacao(e.target.value)}
+                  placeholder="Ex: Esta declaração só é válida sem rasuras."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block font-bold text-slate-700 mb-1">
+                  Data de Emissão ({configEscola.cidade})
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={diaEmissao}
+                    onChange={(e) => setDiaEmissao(e.target.value)}
+                    className="w-16 px-2.5 py-2 rounded-xl border border-slate-300 text-center font-bold"
+                  />
+                  <span>de</span>
+                  <input
+                    type="text"
+                    value={mesEmissao}
+                    onChange={(e) => setMesEmissao(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-center font-bold"
+                  />
+                  <span>de</span>
+                  <input
+                    type="text"
+                    value={anoEmissao}
+                    onChange={(e) => setAnoEmissao(e.target.value)}
+                    className="w-20 px-2.5 py-2 rounded-xl border border-slate-300 text-center font-bold"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1261,7 +1285,7 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
                   />
                 </div>
 
-                <div>
+                <div className="md:col-span-2">
                   <label className="block font-bold text-slate-700 mb-1">Modalidade</label>
                   <input
                     type="text"
@@ -1272,27 +1296,28 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
                   />
                 </div>
 
-                <div>
+                <div className="md:col-span-4">
                   <label className="block font-bold text-slate-700 mb-1">
-                    Prazo Entrega Histórico
+                    Texto de Entrega do Histórico / Documentação (Editável)
                   </label>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
-                      value={prazoEntregaDias}
-                      onChange={(e) => setPrazoEntregaDias(e.target.value)}
-                      className="flex-1 px-3 py-2 rounded-xl border border-slate-300 font-bold"
+                      value={textoHistoricoTransferencia}
+                      onChange={(e) => setTextoHistoricoTransferencia(e.target.value)}
+                      placeholder="Ex: Seu histórico/documentação será entregue em 40 dias."
+                      className="flex-1 px-3 py-2 rounded-xl border border-slate-300 font-semibold"
                     />
                     <label
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold bg-yellow-100 px-2 py-1.5 rounded-lg border border-yellow-300 cursor-pointer"
-                      title="Destacar frase do prazo em amarelo"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold bg-yellow-100 px-3 py-2 rounded-xl border border-yellow-300 cursor-pointer shrink-0"
+                      title="Destacar frase em amarelo igual ao modelo"
                     >
                       <input
                         type="checkbox"
                         checked={destacarPrazoAmarelo}
                         onChange={(e) => setDestacarPrazoAmarelo(e.target.checked)}
                       />
-                      Grifar
+                      Destacar em amarelo
                     </label>
                   </div>
                 </div>
@@ -1349,18 +1374,18 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
               </div>
             )}
 
-            {/* Data de Emissão e Observação Opcional */}
+            {/* Observação Editável (OBS.:) e Data de Emissão */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs pt-2 border-t border-slate-100">
               <div className="md:col-span-2">
                 <label className="block font-bold text-slate-700 mb-1">
-                  Observação Complementar (Opcional)
+                  Observação da Declaração (OBS.: no rodapé — editável)
                 </label>
                 <input
                   type="text"
-                  value={observacaoExtra}
-                  onChange={(e) => setObservacaoExtra(e.target.value)}
-                  placeholder="Deixe em branco caso não queira acrescentar observação extra..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300"
+                  value={textoObservacao}
+                  onChange={(e) => setTextoObservacao(e.target.value)}
+                  placeholder="Ex: Esta declaração só é válida sem rasuras."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium"
                 />
               </div>
 
@@ -1399,15 +1424,15 @@ export const DeclaracoesEscolaresView: React.FC<DeclaracoesEscolaresViewProps> =
       {/* =====================================================================
           PRÉ-VISUALIZAÇÃO E ÁREA DE IMPRESSÃO A4 (COM PAPEL TIMBRADO OFICIAL)
       ===================================================================== */}
-      <div className="print:m-0 print:p-0">
+      <div className="flex flex-col items-center print:block print:m-0 print:p-0">
         {tipoDeclaracao === 'conclusao' && modoConclusao === 'LOTE_TURMA' ? (
           alunosSelecionadosNoLote.length === 0 ? (
-            <div className="no-print bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+            <div className="no-print bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500 w-full">
               Selecione ao menos um aluno ativo na tabela acima para gerar as declarações de
               conclusão em lote.
             </div>
           ) : (
-            <div>
+            <div className="w-full print:m-0 print:p-0">
               {alunosSelecionadosNoLote.map((al, idx) =>
                 renderFolhaDeclaracaoA4(
                   {
