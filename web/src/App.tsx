@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { gasApi, getGasDirectUrl, setGasDirectUrl } from './services/gasApi';
 import DeclaracaoFaltasView from './components/DeclaracaoFaltasView';
+import { ListaPilotoSedView } from './components/ListaPilotoSedView';
 import {
   extrairAlunosDeArquivoPdfNoCliente,
   extrairAlunosDeTextoBolsa,
@@ -47,6 +48,7 @@ type ScreenId =
   | 'processamento'
   | 'conferencia'
   | 'declaracao'
+  | 'listaPiloto'
   | 'configuracoes';
 type TabCicloId =
   | 'pendencias'
@@ -1088,20 +1090,45 @@ export default function App() {
             Declaração com Faltas
           </button>
 
+          <div className="pt-3 pb-1 px-3">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400/90">
+              Serviço Separado • SED
+            </div>
+          </div>
+
           <button
-            onClick={() => {
-              setActiveScreen('configuracoes');
-              carregarVinculos();
-            }}
-            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
-              activeScreen === 'configuracoes'
-                ? 'bg-emerald-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800'
+            onClick={() => setActiveScreen('listaPiloto')}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
+              activeScreen === 'listaPiloto'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-indigo-200 hover:bg-slate-800 border border-indigo-500/20'
             }`}
           >
-            <Settings className="w-4 h-4" />
-            Configurações
+            <span className="flex items-center gap-3">
+              <FileSpreadsheet className="w-4 h-4" />
+              Listas Piloto (SED)
+            </span>
+            <span className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-500/30 text-indigo-200 font-bold">
+              NOVO
+            </span>
           </button>
+
+          <div className="pt-2 border-t border-slate-800/80 mt-2">
+            <button
+              onClick={() => {
+                setActiveScreen('configuracoes');
+                carregarVinculos();
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
+                activeScreen === 'configuracoes'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              Configurações
+            </button>
+          </div>
         </nav>
 
         <div className="p-4 border-t border-slate-800 space-y-2 text-xs">
@@ -2942,6 +2969,11 @@ export default function App() {
               onClearAlunoInicial={() => setAlunoDeclaracaoInicial(null)}
             />
           )}
+
+          {/* ================================================================
+              TELA 4.8: CONFERENCIA E ATUALIZACAO DE LISTAS PILOTO (SED)
+          ================================================================ */}
+          {activeScreen === 'listaPiloto' && <ListaPilotoSedView />}
 
           {/* ================================================================
               TELA 5: CONFIGURACOES (Multi-Escola, Multi-Ano, Virada de Ano e API)

@@ -97,3 +97,150 @@ export interface PayloadMovimentacaoAluno {
   observacao?: string;
   memorizarVinculoNis?: boolean;
 }
+
+// ============================================================================
+// MÓDULO: CONFERÊNCIA E ATUALIZAÇÃO DE LISTAS PILOTO (RELATÓRIO SED)
+// ============================================================================
+
+export interface AlunoRelatorioSed {
+  serie: string;
+  nr: number;
+  nome: string;
+  nomeNormalizado: string;
+  ra: string;
+  raLimpo: string;
+  digRa: string;
+  raFormatado: string;
+  ufRa: string;
+  dataNascimento: string;
+  situacao: string;
+  situacaoNormalizada: string;
+  dataMovimentacao: string;
+  dataMovimentacaoCurta: string;
+  deficiencia: string;
+}
+
+export interface TurmaRelatorioSed {
+  nrClasse: string;
+  turmaSed: string;
+  turmaCodigo: string;
+  tipoEnsino: string;
+  sala: string;
+  anoLetivo: string;
+  dataGeracao: string;
+  escola: string;
+  resumoTopo: {
+    ativos: number;
+    transferidos: number;
+    abandonos: number;
+    ncom: number;
+    outros: number;
+    cadastrados: number;
+  };
+  alunos: AlunoRelatorioSed[];
+}
+
+export interface AlunoListaPilotoDrive {
+  linhaPlanilha: number;
+  rm: string;
+  nr: number;
+  nome: string;
+  nomeNormalizado: string;
+  situacao: string;
+  situacaoNormalizada: string;
+  dataMovimentacao: string;
+  dataMovimentacaoCurta: string;
+  dataNascimento: string;
+  ra: string;
+  raLimpo: string;
+  direitoImagem: string;
+  observacoes: string;
+}
+
+export interface TurmaListaPilotoDrive {
+  idUnico: string;
+  planilhaId: string;
+  planilhaNome: string;
+  planilhaUrl: string;
+  mimeType: string;
+  editavelNoSheets: boolean;
+  nomeAba: string;
+  turmaCodigo: string;
+  turmaExibicao: string;
+  sala: string;
+  professora: string;
+  horarios: string;
+  anoLetivo: string;
+  linhaCabecalho: number;
+  ultimaLinhaComAluno: number;
+  proximaLinhaDisponivel: number;
+  totalAlunos: number;
+  totalAtivos: number;
+  totalMovimentados: number;
+  alunos: AlunoListaPilotoDrive[];
+}
+
+export interface ResultadoEscanearListasPiloto {
+  ok: boolean;
+  configurado: boolean;
+  pastaListaPilotoId: string;
+  pastaNome: string;
+  pastaUrl: string;
+  totalArquivos: number;
+  turmas: TurmaListaPilotoDrive[];
+  erros: string[];
+  avisos: string[];
+  atualizadoEm?: string;
+}
+
+export type TipoMudancaPiloto =
+  | 'NOVO_ALUNO'
+  | 'NOVA_MOVIMENTACAO'
+  | 'ALTERACAO_SITUACAO'
+  | 'DIVERGENCIA_DADOS';
+
+export interface MudancaDetectadaPiloto {
+  id: string;
+  tipo: TipoMudancaPiloto;
+  selecionada: boolean;
+  linhaPlanilha?: number;
+  nr: number;
+  nome: string;
+  // Valores atuais na Lista Piloto (se já existia)
+  rmAtual: string;
+  situacaoAtual: string;
+  dataMovAtual: string;
+  raAtual: string;
+  imAtual: string;
+  obsAtual: string;
+  // Valores vindos do SED
+  situacaoSed: string;
+  dataMovSedCompleta: string;
+  dataMovSedCurta: string;
+  dataNascimentoSed: string;
+  raFormatadoSed: string;
+  deficienciaSed: string;
+  // Valores editáveis pelo operador para gravar na Lista Piloto
+  rmGravar: string;
+  situacaoGravar: string;
+  dataMovGravar: string;
+  dataNascimentoGravar: string;
+  raGravar: string;
+  direitoImagemGravar: string;
+  observacoesGravar: string;
+  descricaoMudanca: string;
+}
+
+export interface ComparacaoTurmaPiloto {
+  idComparacao: string;
+  turmaCodigo: string;
+  nomeExibicao: string;
+  turmaSed: TurmaRelatorioSed | null;
+  turmaPiloto: TurmaListaPilotoDrive | null;
+  statusSala: 'OK_SEM_ALTERACAO' | 'COM_ALTERACOES' | 'SEM_PLANILHA_DRIVE' | 'SEM_TURMA_SED';
+  novosAlunosCount: number;
+  novasMovimentacoesCount: number;
+  divergenciasDadosCount: number;
+  mudancas: MudancaDetectadaPiloto[];
+}
+

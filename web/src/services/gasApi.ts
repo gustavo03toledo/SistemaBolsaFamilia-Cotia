@@ -1,4 +1,9 @@
-import { ConfigPublica, PayloadMovimentacaoAluno, VinculoAluno } from '../types/sbf';
+import {
+  ConfigPublica,
+  PayloadMovimentacaoAluno,
+  ResultadoEscanearListasPiloto,
+  VinculoAluno
+} from '../types/sbf';
 
 export function getGasDirectUrl(): string {
   return (
@@ -154,5 +159,28 @@ export const gasApi = {
   salvarVinculoAluno: (dados: Partial<VinculoAluno>) =>
     callGasApi('SALVAR_VINCULO_ALUNO', dados),
   removerVinculoAluno: (dados: { nis?: string; nomeBolsa?: string }) =>
-    callGasApi('REMOVER_VINCULO_ALUNO', dados)
+    callGasApi('REMOVER_VINCULO_ALUNO', dados),
+  escanearListasPiloto: (pastaListaPilotoId?: string) =>
+    callGasApi<ResultadoEscanearListasPiloto>('ESCANEAR_LISTAS_PILOTO', {
+      pastaListaPilotoId: pastaListaPilotoId || ''
+    }),
+  aplicarAtualizacoesListaPiloto: (dados: {
+    atualizacoesPorTurma: Array<{
+      planilhaId: string;
+      nomeAba?: string;
+      turmaExibicao?: string;
+      mudancas: Array<{
+        linhaPlanilha?: number;
+        nr: number;
+        nome: string;
+        rm?: string;
+        situacao?: string;
+        dataMovimentacao?: string;
+        dataNascimento?: string;
+        ra?: string;
+        direitoImagem?: string;
+        observacoes?: string;
+      }>;
+    }>;
+  }) => callGasApi('APLICAR_ATUALIZACOES_LISTA_PILOTO', dados)
 };
