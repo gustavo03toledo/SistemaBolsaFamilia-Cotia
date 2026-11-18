@@ -29,7 +29,11 @@ import {
 } from 'lucide-react';
 import { gasApi, getGasDirectUrl, setGasDirectUrl } from './services/gasApi';
 import DeclaracaoFaltasView from './components/DeclaracaoFaltasView';
-import { ListaPilotoSedView } from './components/ListaPilotoSedView';
+import {
+  ListaPilotoHeaderState,
+  ListaPilotoSedView,
+  SubTabListaPilotoId
+} from './components/ListaPilotoSedView';
 import {
   extrairAlunosDeArquivoPdfNoCliente,
   extrairAlunosDeTextoBolsa,
@@ -41,6 +45,8 @@ import {
   TipoMovimentacaoAluno,
   VinculoAluno
 } from './types/sbf';
+
+type ModuleId = 'bolsaFamilia' | 'declaracoes' | 'listaPiloto';
 
 type ScreenId =
   | 'painel'
@@ -107,7 +113,39 @@ function classificarEtapaDiarioCliente(
 }
 
 export default function App() {
+  const [activeModule, setActiveModule] = useState<ModuleId>('bolsaFamilia');
   const [activeScreen, setActiveScreen] = useState<ScreenId>('painel');
+  const [subTabListaPiloto, setSubTabListaPiloto] = useState<SubTabListaPilotoId>('conferencia');
+  const [listaPilotoHeaderState, setListaPilotoHeaderState] =
+    useState<ListaPilotoHeaderState | null>(null);
+
+  useEffect(() => {
+    if (activeScreen === 'declaracao') {
+      setActiveModule('declaracoes');
+    } else if (activeScreen === 'listaPiloto') {
+      setActiveModule('listaPiloto');
+    } else if (
+      activeScreen === 'painel' ||
+      activeScreen === 'processamento' ||
+      activeScreen === 'conferencia' ||
+      activeScreen === 'configuracoes'
+    ) {
+      setActiveModule('bolsaFamilia');
+    }
+  }, [activeScreen]);
+
+  function selecionarModuloPrincipal(mod: ModuleId) {
+    setActiveModule(mod);
+    if (mod === 'bolsaFamilia') {
+      if (activeScreen === 'declaracao' || activeScreen === 'listaPiloto') {
+        setActiveScreen('painel');
+      }
+    } else if (mod === 'declaracoes') {
+      setActiveScreen('declaracao');
+    } else if (mod === 'listaPiloto') {
+      setActiveScreen('listaPiloto');
+    }
+  }
   const [config, setConfig] = useState<ConfigPublica | null>(null);
   const [pastaDiariosInput, setPastaDiariosInput] = useState<string>('');
   const [periodoId, setPeriodoId] = useState<string>('ABR_MAI');
@@ -1005,169 +1043,359 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex bg-slate-100 text-slate-900">
-      {/* SIDEBAR */}
-      <aside className="w-64 bg-slate-900 text-slate-100 flex flex-col shrink-0 no-print">
+      {/* SIDEBAR — GESTÃO ESCOLAR (MULTI-MÓDULOS COM SUB-ABAS) */}
+      <aside className="w-72 bg-slate-900 text-slate-100 flex flex-col shrink-0 no-print border-r border-slate-800">
+        {/* Identidade do Projeto: Gestão Escolar */}
         <div className="p-5 border-b border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-slate-950">
-              BF
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-indigo-500 flex items-center justify-center font-extrabold text-slate-950 shadow-md">
+              <School className="w-5 h-5 text-slate-950" />
             </div>
             <div>
-              <h1 className="font-bold text-base leading-tight">SBF Panorama</h1>
-              <p className="text-xs text-slate-400">Conferência Bolsa Família</p>
+              <h1 className="font-extrabold text-base leading-tight tracking-tight text-white">
+                Gestão Escolar
+              </h1>
+              <p className="text-[11px] text-slate-400">Secretaria & Automação Escolar</p>
             </div>
           </div>
         </div>
 
-        <nav className="p-3 space-y-1 flex-1">
-          <button
-            onClick={() => setActiveScreen('painel')}
-            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
-              activeScreen === 'painel'
-                ? 'bg-emerald-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            Painel Geral
-          </button>
-
-          <button
-            onClick={() => setActiveScreen('diarios')}
-            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
-              activeScreen === 'diarios'
-                ? 'bg-emerald-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <FolderSearch className="w-4 h-4" />
-            Diários da Escola
-          </button>
-
-          <button
-            onClick={() => setActiveScreen('processamento')}
-            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
-              activeScreen === 'processamento'
-                ? 'bg-emerald-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <FileUp className="w-4 h-4" />
-            Nova Conferência (PDF)
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveScreen('conferencia');
-              carregarVinculos();
-            }}
-            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
-              activeScreen === 'conferencia'
-                ? 'bg-emerald-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <span className="flex items-center gap-3">
-              <ClipboardCheck className="w-4 h-4" />
-              Mesa de Conferência
-            </span>
-            {(resumo.pendencias || 0) > 0 && (
-              <span className="px-2 py-0.5 text-xs rounded-full bg-amber-500 text-slate-950 font-bold">
-                {resumo.pendencias}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveScreen('declaracao')}
-            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
-              activeScreen === 'declaracao'
-                ? 'bg-emerald-600 text-white'
-                : 'text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            Declaração com Faltas
-          </button>
-
-          <div className="pt-3 pb-1 px-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400/90">
-              Serviço Separado • SED
-            </div>
+        <nav className="p-3 space-y-3 flex-1 overflow-y-auto">
+          <div className="px-2 pt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Módulos do Sistema
           </div>
 
-          <button
-            onClick={() => setActiveScreen('listaPiloto')}
-            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
-              activeScreen === 'listaPiloto'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-indigo-200 hover:bg-slate-800 border border-indigo-500/20'
+          {/* ==============================================================
+              ABA PRINCIPAL 1: BOLSA FAMÍLIA (E SUAS SUB-ABAS ENCAPSULADAS)
+          ============================================================== */}
+          <div
+            className={`rounded-xl border transition overflow-hidden ${
+              activeModule === 'bolsaFamilia'
+                ? 'bg-slate-800/80 border-emerald-500/40'
+                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
             }`}
           >
-            <span className="flex items-center gap-3">
-              <FileSpreadsheet className="w-4 h-4" />
-              Listas Piloto (SED)
-            </span>
-            <span className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-500/30 text-indigo-200 font-bold">
-              NOVO
-            </span>
-          </button>
-
-          <div className="pt-2 border-t border-slate-800/80 mt-2">
             <button
-              onClick={() => {
-                setActiveScreen('configuracoes');
-                carregarVinculos();
-              }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition ${
-                activeScreen === 'configuracoes'
+              onClick={() => selecionarModuloPrincipal('bolsaFamilia')}
+              className={`w-full flex items-center justify-between px-3.5 py-3 text-sm font-bold transition cursor-pointer ${
+                activeModule === 'bolsaFamilia'
                   ? 'bg-emerald-600 text-white'
-                  : 'text-slate-300 hover:bg-slate-800'
+                  : 'text-slate-200 hover:bg-slate-800'
               }`}
             >
-              <Settings className="w-4 h-4" />
-              Configurações
+              <span className="flex items-center gap-2.5">
+                <ClipboardCheck className="w-4 h-4" />
+                Bolsa Família
+              </span>
+              <div className="flex items-center gap-1.5">
+                {(resumo.pendencias || 0) > 0 && (
+                  <span className="px-2 py-0.5 text-[10px] rounded-full bg-amber-400 text-slate-950 font-extrabold">
+                    {resumo.pendencias}
+                  </span>
+                )}
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform ${
+                    activeModule === 'bolsaFamilia' ? 'rotate-180' : ''
+                  }`}
+                />
+              </div>
             </button>
+
+            {activeModule === 'bolsaFamilia' && (
+              <div className="p-2 space-y-1 bg-slate-900/60">
+                <button
+                  onClick={() => setActiveScreen('painel')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'painel'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  Painel do Bolsa
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('diarios')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'diarios'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <FolderSearch className="w-3.5 h-3.5" />
+                  Diários da Escola
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('processamento')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'processamento'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <FileUp className="w-3.5 h-3.5" />
+                  Nova Conferência (PDF)
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveScreen('conferencia');
+                    carregarVinculos();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'conferencia'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <ClipboardCheck className="w-3.5 h-3.5" />
+                    Mesa de Conferência
+                  </span>
+                  {(resumo.pendencias || 0) > 0 && (
+                    <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500 text-slate-950 font-bold">
+                      {resumo.pendencias}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveScreen('configuracoes');
+                    carregarVinculos();
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'configuracoes'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  Configurações & Banco BF
+                </button>
+
+                {/* Atalhos encapsulados do Bolsa Família */}
+                <div className="pt-2 mt-2 border-t border-slate-800 space-y-1.5">
+                  <div className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    Arquivos do Bolsa Família
+                  </div>
+                  <a
+                    href={config?.pastaSaidaDadosUrl || PASTA_SAIDA_UNICA_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-emerald-400 text-[11px] font-medium"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                      Pasta de Dados Gerados
+                    </span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
+                  </a>
+
+                  {dadosCiclo?.bancoDadosUrl && (
+                    <a
+                      href={dadosCiclo.bancoDadosUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-700 text-slate-300 text-[11px]"
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" />
+                        Planilha Banco Oficial
+                      </span>
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ==============================================================
+              ABA PRINCIPAL 2: DECLARAÇÕES (E SUAS SUB-ABAS)
+          ============================================================== */}
+          <div
+            className={`rounded-xl border transition overflow-hidden ${
+              activeModule === 'declaracoes'
+                ? 'bg-slate-800/80 border-amber-500/40'
+                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <button
+              onClick={() => selecionarModuloPrincipal('declaracoes')}
+              className={`w-full flex items-center justify-between px-3.5 py-3 text-sm font-bold transition cursor-pointer ${
+                activeModule === 'declaracoes'
+                  ? 'bg-amber-600 text-white'
+                  : 'text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <FileText className="w-4 h-4" />
+                Declarações
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${
+                  activeModule === 'declaracoes' ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {activeModule === 'declaracoes' && (
+              <div className="p-2 space-y-1 bg-slate-900/60">
+                <button
+                  onClick={() => setActiveScreen('declaracao')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'declaracao'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Declaração com Faltas (CRAS)
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('diarios')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'diarios'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <FolderSearch className="w-3.5 h-3.5" />
+                  Base de Diários (Cálculo)
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ==============================================================
+              ABA PRINCIPAL 3: LISTA PILOTO (SED) (E SUAS SUB-ABAS)
+          ============================================================== */}
+          <div
+            className={`rounded-xl border transition overflow-hidden ${
+              activeModule === 'listaPiloto'
+                ? 'bg-slate-800/80 border-indigo-500/40'
+                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+            }`}
+          >
+            <button
+              onClick={() => selecionarModuloPrincipal('listaPiloto')}
+              className={`w-full flex items-center justify-between px-3.5 py-3 text-sm font-bold transition cursor-pointer ${
+                activeModule === 'listaPiloto'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <FileSpreadsheet className="w-4 h-4" />
+                Lista Piloto
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${
+                  activeModule === 'listaPiloto' ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {activeModule === 'listaPiloto' && (
+              <div className="p-2 space-y-1 bg-slate-900/60">
+                <button
+                  onClick={() => {
+                    setActiveScreen('listaPiloto');
+                    setSubTabListaPiloto('conferencia');
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'listaPiloto' && subTabListaPiloto === 'conferencia'
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <ClipboardCheck className="w-3.5 h-3.5" />
+                    Conferência SED × Drive
+                  </span>
+                  {(listaPilotoHeaderState?.salasComMudancaCount || 0) > 0 && (
+                    <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-400 text-slate-950 font-bold">
+                      {listaPilotoHeaderState?.salasComMudancaCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveScreen('listaPiloto');
+                    setSubTabListaPiloto('turmas');
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'listaPiloto' && subTabListaPiloto === 'turmas'
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    Turmas & Planilhas
+                  </span>
+                  {(listaPilotoHeaderState?.totalTurmasPiloto || 0) > 0 && (
+                    <span className="px-1.5 py-0.5 text-[10px] rounded bg-indigo-500/30 text-indigo-200 font-bold">
+                      {listaPilotoHeaderState?.totalTurmasPiloto}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveScreen('listaPiloto');
+                    setSubTabListaPiloto('config');
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'listaPiloto' && subTabListaPiloto === 'config'
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  Pasta & Configurações
+                </button>
+
+                {listaPilotoHeaderState?.pastaUrl && (
+                  <div className="pt-2 mt-2 border-t border-slate-800">
+                    <a
+                      href={listaPilotoHeaderState.pastaUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-indigo-300 text-[11px] font-medium"
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                        Pasta Listas Piloto (Drive)
+                      </span>
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </nav>
 
-        <div className="p-4 border-t border-slate-800 space-y-2 text-xs">
-          <a
-            href={config?.pastaSaidaDadosUrl || PASTA_SAIDA_UNICA_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-400 font-medium"
-          >
-            <span className="flex items-center gap-2">
-              <FolderOpen className="w-4 h-4 shrink-0" />
-              Pasta de Dados Gerados
-            </span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-
-          {dadosCiclo?.bancoDadosUrl && (
-            <a
-              href={dadosCiclo.bancoDadosUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-300"
-            >
-              <span className="flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 shrink-0" />
-                Planilha Banco Oficial
-              </span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
+        <div className="p-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+          <span className="truncate">{escolaAtiva?.nome || 'Unidade Escolar'}</span>
+          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">
+            {anoReferencia}
+          </span>
         </div>
       </aside>
 
       {/* MAIN AREA */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* HEADER FIXO */}
-        <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-20 no-print">
+        {/* HEADER DINÂMICO CONTEXTUAL (ALTERNA CONFORME A ABA PRINCIPAL ATIVA) */}
+        <header className="min-h-16 py-2 bg-white border-b border-slate-200 px-6 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-20 no-print">
           <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Seletor de Escola Ativa (Multi-Escola) */}
+            {/* Seletor Global de Unidade Escolar */}
             <div className="relative">
               <button
                 onClick={() => {
@@ -1176,14 +1404,14 @@ export default function App() {
                   setMenuCiclosOpen(false);
                   setMenuAprovadasOpen(false);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold text-emerald-900"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-300 text-xs font-bold text-slate-900 cursor-pointer"
                 title="Alterar Escola Ativa ou Cadastrar Nova Escola"
               >
-                <School className="w-3.5 h-3.5 text-emerald-700" />
+                <School className="w-3.5 h-3.5 text-slate-700" />
                 <span className="max-w-[190px] truncate">
                   {escolaAtiva?.nome || 'Escola Ativa'}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-emerald-700" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
               </button>
 
               {menuEscolasOpen && (
@@ -1198,7 +1426,9 @@ export default function App() {
                         key={esc.id}
                         onClick={() => handleAlternarEscola(esc.id)}
                         className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 flex items-center justify-between ${
-                          esc.id === escolaAtiva?.id ? 'bg-emerald-50/80 font-bold text-emerald-900' : ''
+                          esc.id === escolaAtiva?.id
+                            ? 'bg-emerald-50/80 font-bold text-emerald-900'
+                            : ''
                         }`}
                       >
                         <div className="truncate pr-2">
@@ -1217,6 +1447,7 @@ export default function App() {
                     <button
                       onClick={() => {
                         setMenuEscolasOpen(false);
+                        selecionarModuloPrincipal('bolsaFamilia');
                         setActiveScreen('configuracoes');
                       }}
                       className="w-full px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-800 flex items-center justify-center gap-1.5"
@@ -1229,197 +1460,343 @@ export default function App() {
               )}
             </div>
 
-            {/* Seletor de Ano Letivo (Multi-Ano) */}
-            <div className="relative">
+            {/* Alternador Rápido de Módulos Principais no Header */}
+            <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
               <button
-                onClick={() => {
-                  setMenuAnosOpen(!menuAnosOpen);
-                  setMenuEscolasOpen(false);
-                  setMenuCiclosOpen(false);
-                  setMenuAprovadasOpen(false);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-xs font-bold text-indigo-900"
-                title="Alternar Ano Letivo (Banco separado por ano)"
+                onClick={() => selecionarModuloPrincipal('bolsaFamilia')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  activeModule === 'bolsaFamilia'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                <Calendar className="w-3.5 h-3.5 text-indigo-700" />
-                <span>Ano {anoReferencia}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-indigo-700" />
+                Bolsa Família
               </button>
-
-              {menuAnosOpen && (
-                <div className="absolute left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-30">
-                  <div className="px-3 py-1.5 text-[11px] font-bold text-slate-400 uppercase">
-                    Banco Separado por Ano
-                  </div>
-                  {anosDisponiveis.map((ano) => (
-                    <button
-                      key={ano}
-                      onClick={() => handleAlternarAnoLetivo(ano)}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 flex items-center justify-between ${
-                        Number(ano) === Number(anoReferencia)
-                          ? 'bg-indigo-50 font-bold text-indigo-900'
-                          : ''
-                      }`}
-                    >
-                      <span>Ano Letivo {ano}</span>
-                      {Number(ano) === Number(anoReferencia) && (
-                        <Check className="w-4 h-4 text-indigo-600" />
-                      )}
-                    </button>
-                  ))}
-                  <div className="border-t border-slate-100 mt-1 pt-1.5 px-2 space-y-1">
-                    <button
-                      onClick={() => handleAlternarAnoLetivo(anoReferencia + 1)}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Abrir Ano {anoReferencia + 1}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMenuAnosOpen(false);
-                        setActiveScreen('configuracoes');
-                      }}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      Zerar Ciclos / Virada de Ano
-                    </button>
-                  </div>
-                </div>
-              )}
+              <button
+                onClick={() => selecionarModuloPrincipal('declaracoes')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  activeModule === 'declaracoes'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Declarações
+              </button>
+              <button
+                onClick={() => selecionarModuloPrincipal('listaPiloto')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  activeModule === 'listaPiloto'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Lista Piloto
+              </button>
             </div>
 
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 ml-1">
-              Ciclo:
-            </span>
+            {/* CONTROLES ESPECÍFICOS DO HEADER: MÓDULO BOLSA FAMÍLIA */}
+            {activeModule === 'bolsaFamilia' && (
+              <>
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setMenuAnosOpen(!menuAnosOpen);
+                      setMenuEscolasOpen(false);
+                      setMenuCiclosOpen(false);
+                      setMenuAprovadasOpen(false);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-xs font-bold text-emerald-900 cursor-pointer"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Ano {anoReferencia}</span>
+                    <ChevronDown className="w-3.5 h-3.5 text-emerald-700" />
+                  </button>
 
-            {/* Seletor Rapido de Ciclo Salvo */}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setMenuCiclosOpen(!menuCiclosOpen);
-                  setMenuEscolasOpen(false);
-                  setMenuAnosOpen(false);
-                  setMenuAprovadasOpen(false);
-                }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-semibold text-slate-800"
-              >
-                <span>{abaCicloSelecionada || 'Selecionar Ciclo'}</span>
-                <ChevronDown className="w-4 h-4 text-slate-500" />
-              </button>
-
-              {menuCiclosOpen && (
-                <div className="absolute left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-30">
-                  <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase">
-                    Ciclos Salvos em {anoReferencia}
-                  </div>
-                  {ciclosRegistrados.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-slate-500">
-                      Nenhum ciclo processado neste ano ainda.
+                  {menuAnosOpen && (
+                    <div className="absolute left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-30">
+                      <div className="px-3 py-1.5 text-[11px] font-bold text-slate-400 uppercase">
+                        Banco Separado por Ano
+                      </div>
+                      {anosDisponiveis.map((ano) => (
+                        <button
+                          key={ano}
+                          onClick={() => handleAlternarAnoLetivo(ano)}
+                          className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 flex items-center justify-between ${
+                            Number(ano) === Number(anoReferencia)
+                              ? 'bg-emerald-50 font-bold text-emerald-900'
+                              : ''
+                          }`}
+                        >
+                          <span>Ano Letivo {ano}</span>
+                          {Number(ano) === Number(anoReferencia) && (
+                            <Check className="w-4 h-4 text-emerald-600" />
+                          )}
+                        </button>
+                      ))}
+                      <div className="border-t border-slate-100 mt-1 pt-1.5 px-2 space-y-1">
+                        <button
+                          onClick={() => handleAlternarAnoLetivo(anoReferencia + 1)}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Abrir Ano {anoReferencia + 1}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMenuAnosOpen(false);
+                            setActiveScreen('configuracoes');
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          Zerar Ciclos / Virada de Ano
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    ciclosRegistrados.map((c: any) => (
-                      <button
-                        key={c.nomeAba}
-                        onClick={() => {
-                          setAbaCicloSelecionada(c.nomeAba);
-                          setMenuCiclosOpen(false);
-                          recarregarDadosCiclo(c.nomeAba, true);
-                          setActiveScreen('conferencia');
-                        }}
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center justify-between ${
-                          c.nomeAba === abaCicloSelecionada ? 'bg-emerald-50 font-semibold text-emerald-800' : ''
-                        }`}
-                      >
-                        <div>
-                          <div>{c.nomeAba}</div>
-                          <div className="text-xs text-slate-500">
-                            {c.cicloBolsa?.rotulo || ''} • {c.totalRegistros || 0} alunos
-                          </div>
-                        </div>
-                        {c.nomeAba === abaCicloSelecionada && (
-                          <Check className="w-4 h-4 text-emerald-600" />
-                        )}
-                      </button>
-                    ))
                   )}
                 </div>
-              )}
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2.5">
-            {infoAnoAtivo?.pastaAnoUrl && (
-              <a
-                href={infoAnoAtivo.pastaAnoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100 text-xs font-semibold text-emerald-800"
-                title="Abrir pasta exclusiva desta Escola e Ano no Google Drive"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-emerald-700" />
-                <span>Pasta {anoReferencia}</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
+                {/* Seletor Rápido de Ciclo Salvo do Bolsa Família */}
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setMenuCiclosOpen(!menuCiclosOpen);
+                      setMenuEscolasOpen(false);
+                      setMenuAnosOpen(false);
+                      setMenuAprovadasOpen(false);
+                    }}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-800 cursor-pointer"
+                  >
+                    <span>Ciclo: {abaCicloSelecionada || 'Selecionar'}</span>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                  </button>
+
+                  {menuCiclosOpen && (
+                    <div className="absolute left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-30">
+                      <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase">
+                        Ciclos do Bolsa Família em {anoReferencia}
+                      </div>
+                      {ciclosRegistrados.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-slate-500">
+                          Nenhum ciclo processado neste ano ainda.
+                        </div>
+                      ) : (
+                        ciclosRegistrados.map((c: any) => (
+                          <button
+                            key={c.nomeAba}
+                            onClick={() => {
+                              setAbaCicloSelecionada(c.nomeAba);
+                              setMenuCiclosOpen(false);
+                              recarregarDadosCiclo(c.nomeAba, true);
+                              setActiveScreen('conferencia');
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center justify-between ${
+                              c.nomeAba === abaCicloSelecionada
+                                ? 'bg-emerald-50 font-semibold text-emerald-800'
+                                : ''
+                            }`}
+                          >
+                            <div>
+                              <div>{c.nomeAba}</div>
+                              <div className="text-xs text-slate-500">
+                                {c.cicloBolsa?.rotulo || ''} • {c.totalRegistros || 0} alunos
+                              </div>
+                            </div>
+                            {c.nomeAba === abaCicloSelecionada && (
+                              <Check className="w-4 h-4 text-emerald-600" />
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
-            {/* Menu Listas Aprovadas */}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setMenuAprovadasOpen(!menuAprovadasOpen);
-                  setMenuCiclosOpen(false);
-                  setMenuEscolasOpen(false);
-                  setMenuAnosOpen(false);
-                }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700"
-              >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                Listas Aprovadas ({listasAprovadas.length})
-                <ChevronDown className="w-3.5 h-3.5" />
-              </button>
+            {/* CONTROLES ESPECÍFICOS DO HEADER: MÓDULO DECLARAÇÕES */}
+            {activeModule === 'declaracoes' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold">
+                  <FileText className="w-3.5 h-3.5 text-amber-600" />
+                  Emissão de Declaração Oficial (CRAS / Secretaria)
+                </span>
+                <span className="hidden lg:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs font-medium">
+                  Turmas mapeadas: <strong>{turmasConhecidas.length}</strong>
+                </span>
+              </div>
+            )}
 
-              {menuAprovadasOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-30 max-h-80 overflow-y-auto">
-                  <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase">
-                    Planilhas Aprovadas na Pasta de {anoReferencia}
-                  </div>
-                  {listasAprovadas.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-slate-500">
-                      Nenhuma lista aprovada registrada.
+            {/* CONTROLES ESPECÍFICOS DO HEADER: MÓDULO LISTA PILOTO */}
+            {activeModule === 'listaPiloto' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-bold">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
+                  Automação SED × Listas Piloto
+                </span>
+                {listaPilotoHeaderState && listaPilotoHeaderState.totalTurmasPiloto > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    {listaPilotoHeaderState.totalTurmasPiloto} Planilhas no Drive (
+                    {listaPilotoHeaderState.totalAlunosPiloto} alunos)
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* LADO DIREITO DO HEADER — BOTÕES CONTEXTUAIS DE CADA MÓDULO */}
+          <div className="flex items-center gap-2">
+            {activeModule === 'bolsaFamilia' && (
+              <>
+                {infoAnoAtivo?.pastaAnoUrl && (
+                  <a
+                    href={infoAnoAtivo.pastaAnoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100 text-xs font-semibold text-emerald-800"
+                    title="Abrir pasta exclusiva do Bolsa Família desta Escola e Ano no Google Drive"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Pasta BF {anoReferencia}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+
+                {dadosCiclo?.bancoDadosUrl && (
+                  <a
+                    href={dadosCiclo.bancoDadosUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Banco BF</span>
+                    <ExternalLink className="w-3 h-3 text-slate-400" />
+                  </a>
+                )}
+
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setMenuAprovadasOpen(!menuAprovadasOpen);
+                      setMenuCiclosOpen(false);
+                      setMenuEscolasOpen(false);
+                      setMenuAnosOpen(false);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                    Listas Aprovadas ({listasAprovadas.length})
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+
+                  {menuAprovadasOpen && (
+                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-30 max-h-80 overflow-y-auto">
+                      <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase">
+                        Planilhas Aprovadas do Bolsa em {anoReferencia}
+                      </div>
+                      {listasAprovadas.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-slate-500">
+                          Nenhuma lista aprovada registrada.
+                        </div>
+                      ) : (
+                        listasAprovadas.map((item: any, i: number) => (
+                          <a
+                            key={i}
+                            href={item.URL || '#'}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block px-3 py-2 hover:bg-slate-50 text-xs border-b border-slate-100 last:border-0"
+                          >
+                            <div className="font-semibold text-slate-800 flex items-center justify-between">
+                              <span>{item['Ciclo Bolsa'] || item['Nome arquivo']}</span>
+                              <ExternalLink className="w-3 h-3 text-slate-400" />
+                            </div>
+                            <div className="text-slate-500 mt-0.5">
+                              {item['Data aprovacao']} • {item['Total registros']} alunos
+                            </div>
+                          </a>
+                        ))
+                      )}
                     </div>
-                  ) : (
-                    listasAprovadas.map((item: any, i: number) => (
-                      <a
-                        key={i}
-                        href={item.URL || '#'}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block px-3 py-2 hover:bg-slate-50 text-xs border-b border-slate-100 last:border-0"
-                      >
-                        <div className="font-semibold text-slate-800 flex items-center justify-between">
-                          <span>{item['Ciclo Bolsa'] || item['Nome arquivo']}</span>
-                          <ExternalLink className="w-3 h-3 text-slate-400" />
-                        </div>
-                        <div className="text-slate-500 mt-0.5">
-                          {item['Data aprovacao']} • {item['Total registros']} alunos
-                        </div>
-                      </a>
-                    ))
                   )}
                 </div>
-              )}
-            </div>
 
-            <button
-              onClick={() => recarregarDadosCiclo(undefined, false)}
-              disabled={!!busyMessage}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${busyMessage ? 'animate-spin' : ''}`} />
-              Atualizar
-            </button>
+                <button
+                  onClick={() => recarregarDadosCiclo(undefined, false)}
+                  disabled={!!busyMessage}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${busyMessage ? 'animate-spin' : ''}`} />
+                  Atualizar Bolsa
+                </button>
+              </>
+            )}
+
+            {activeModule === 'declaracoes' && (
+              <>
+                <button
+                  onClick={() => setActiveScreen('declaracao')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'declaracao'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Emitir Declaração
+                </button>
+                <button
+                  onClick={() => setActiveScreen('diarios')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'diarios'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Base de Diários
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Imprimir A4
+                </button>
+              </>
+            )}
+
+            {activeModule === 'listaPiloto' && (
+              <>
+                {listaPilotoHeaderState?.pastaUrl && (
+                  <a
+                    href={listaPilotoHeaderState.pastaUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-xs font-bold"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    Pasta Listas Piloto
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+
+                {listaPilotoHeaderState?.onSincronizarDrive && (
+                  <button
+                    onClick={() => listaPilotoHeaderState.onSincronizarDrive()}
+                    disabled={listaPilotoHeaderState.carregandoPiloto}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${
+                        listaPilotoHeaderState.carregandoPiloto ? 'animate-spin' : ''
+                      }`}
+                    />
+                    Sincronizar Listas
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </header>
 
@@ -1464,7 +1841,145 @@ export default function App() {
         </div>
 
         {/* CONTEUDO DAS PAGINAS */}
-        <main className="p-6 flex-1">
+        <main className="p-6 flex-1 space-y-6">
+          {/* BARRA DE SUB-ABAS INTERNAS DO MÓDULO BOLSA FAMÍLIA */}
+          {activeModule === 'bolsaFamilia' && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap items-center justify-between gap-2 shadow-xs no-print">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  onClick={() => setActiveScreen('painel')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'painel'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  Painel do Bolsa
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('diarios')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'diarios'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <FolderSearch className="w-3.5 h-3.5" />
+                  Diários da Escola
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('processamento')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'processamento'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <FileUp className="w-3.5 h-3.5" />
+                  Nova Conferência (PDF)
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveScreen('conferencia');
+                    carregarVinculos();
+                  }}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'conferencia'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <ClipboardCheck className="w-3.5 h-3.5" />
+                  Mesa de Conferência
+                  {(resumo.pendencias || 0) > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-extrabold">
+                      {resumo.pendencias}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveScreen('configuracoes');
+                    carregarVinculos();
+                  }}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'configuracoes'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  Configurações & Banco BF
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pr-1">
+                <a
+                  href={config?.pastaSaidaDadosUrl || PASTA_SAIDA_UNICA_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-xs font-semibold"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 text-emerald-700" />
+                  Pasta de Dados Gerados
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+
+                {dadosCiclo?.bancoDadosUrl && (
+                  <a
+                    href={dadosCiclo.bancoDadosUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                    Planilha do Banco
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* BARRA DE SUB-ABAS INTERNAS DO MÓDULO DECLARAÇÕES */}
+          {activeModule === 'declaracoes' && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap items-center justify-between gap-2 shadow-xs no-print">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  onClick={() => setActiveScreen('declaracao')}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'declaracao'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Declaração com Faltas (CRAS / Bolsa Família)
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('diarios')}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'diarios'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <FolderSearch className="w-3.5 h-3.5" />
+                  Base de Diários da Escola ({turmasConhecidas.length} turmas)
+                </button>
+              </div>
+
+              <span className="px-3 py-1 text-xs text-slate-500">
+                Papel Timbrado Oficial — Secretaria Municipal de Educação de Cotia
+              </span>
+            </div>
+          )}
           {/* ================================================================
               TELA 1: PAINEL GERAL
           ================================================================ */}
@@ -2973,7 +3488,13 @@ export default function App() {
           {/* ================================================================
               TELA 4.8: CONFERENCIA E ATUALIZACAO DE LISTAS PILOTO (SED)
           ================================================================ */}
-          {activeScreen === 'listaPiloto' && <ListaPilotoSedView />}
+          {activeScreen === 'listaPiloto' && (
+            <ListaPilotoSedView
+              activeSubTab={subTabListaPiloto}
+              onChangeSubTab={setSubTabListaPiloto}
+              onHeaderStateChange={setListaPilotoHeaderState}
+            />
+          )}
 
           {/* ================================================================
               TELA 5: CONFIGURACOES (Multi-Escola, Multi-Ano, Virada de Ano e API)

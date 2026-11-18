@@ -86,11 +86,24 @@ export function extrairRaBaseLimpo(raStr: string): string {
   return partes[0].replace(/\D+/g, '').replace(/^0+/, '');
 }
 
+export function obterNomeTurmaDaPlanilha(nomeArquivoOuPlanilha: string): string {
+  const bruto = String(nomeArquivoOuPlanilha || '').trim();
+  if (!bruto) return '';
+  const limpo = bruto
+    .replace(/\.(xlsx|xls|pdf)$/i, '')
+    .replace(/\s*[-–]\s*LISTA\s*PILOTO.*$/i, '')
+    .replace(/^LISTA\s*PILOTO\s*[-–]?\s*/i, '')
+    .trim();
+  return limpo || bruto.replace(/\.(xlsx|xls|pdf)$/i, '').trim();
+}
+
 export function extrairCodigoCanonicoTurma(texto: string): string {
-  const t = removerAcentos(texto).toUpperCase();
+  const t = removerAcentos(texto)
+    .toUpperCase()
+    .replace(/[º°ª]/g, ' ');
 
   // 1. AEE (Atendimento Educacional Especializado)
-  const mAee = t.match(/\bAEE\s*([A-Z])\b/);
+  const mAee = t.match(/\bAEE\s*[-–]?\s*([A-Z])\b/);
   if (mAee) {
     return `AEE_${mAee[1]}`;
   }
@@ -98,24 +111,21 @@ export function extrairCodigoCanonicoTurma(texto: string): string {
   // 2. Educação Infantil / Pré-Escola / Etapa / Maternal / Berçário
   if (/\b(PRE|ETAPA|INFANTIL|FASE|MATERNAL|BERCARIO|JARDIM)\b/.test(t)) {
     let etapaNum = '';
-    const mEtapa =
-      t.match(/\b([123I]{1,3})\s*(?:A|ª|º|°)?\s*(?:ETAPA|PRE|FASE|INFANTIL)\b/) ||
-      t.match(/\b(?:ETAPA|PRE|FASE|INFANTIL)\s*([123I]{1,3})\b/);
-    if (mEtapa) {
-      const rawE = mEtapa[1];
-      etapaNum = rawE === 'I' ? '1' : rawE === 'II' ? '2' : rawE === 'III' ? '3' : rawE;
-    }
-    const mLetraPre = t.match(/\b(?:ETAPA|PRE(?:-ESCOLA)?|INFANTIL|FASE)\s*(?:[123I]+\s*)?([A-H])\b/);
-    let letraPre = mLetraPre ? mLetraPre[1] : '';
-    if (!letraPre) {
-      const mLetraSolta = t.match(/\b([A-H])\s+(?:MANHA|TARDE|INTEGRAL|ANUAL)\b/);
-      if (mLetraSolta) letraPre = mLetraSolta[1];
-    }
+    if (/\b(2|II|SEGUNDA)\b/.test(t)) etapaNum = '2';
+    else if (/\b(1|I|PRIMEIRA)\b/.test(t)) etapaNum = '1';
+    else if (/\b(3|III|TERCEIRA)\b/.test(t)) etapaNum = '3';
+
+    const tSemTermos = t.replace(
+      /\b(MANHA|TARDE|INTEGRAL|ANUAL|LISTA|PILOTO|ESCOLA|INFANTIL|EDUCACAO|ETAPA|PRE|FASE|MATERNAL|BERCARIO|JARDIM|SALA|CLASSE)\b/g,
+      ' '
+    );
+    const mLetraPre = tSemTermos.match(/\b([A-H])\b/);
+    const letraPre = mLetraPre ? mLetraPre[1] : '';
     return `PRE_${etapaNum}${letraPre}`;
   }
 
   // 3. Ensino Fundamental (1º ao 9º Ano)
-  const mFund = t.match(/\b([1-9])\s*(?:º|°|O)?\s*(?:ANO\s*)?([A-H])\b/);
+  const mFund = t.match(/\b([1-9])\s*(?:ANO\s*)?[-–]?\s*([A-H])\b/);
   if (mFund) {
     return `FUND_${mFund[1]}${mFund[2]}`;
   }
@@ -459,8 +469,8 @@ export async function extrairListaPilotoDeArquivoPdfLocal(
     }
   }
 
-  const turmaExibicao = classe || tituloTopo || file.name.replace(/\.pdf$/i, '');
-  const turmaCodigo = extrairCodigoCanonicoTurma(`${classe} ${tituloTopo} ${file.name}`);
+  const turmaExibicao = obterNomeTurmaDaPlanilha(file.name) || classe || tituloTopo;
+  const turmaCodigo = extrairCodigoCanonicoTurma(file.name || `${classe} ${tituloTopo}`);
 
   return {
     idUnico: `local-pdf::${file.name}`,
@@ -491,9 +501,23 @@ export async function extrairListaPilotoDeArquivoPdfLocal(
  */
 export function compararRelatorioSedComListasPiloto(
   turmasSed: TurmaRelatorioSed[],
-  turmasPiloto: TurmaListaPilotoDrive[],
+  turmasPilotoRaw: TurmaListaPilotoDrive[],
   dataChegadaPadrao?: string
 ): ComparacaoTurmaPiloto[] {
+  // Garantir que o nome de exibição e o código canônico de cada Lista Piloto venham sempre do nome da planilha
+  const turmasPiloto: TurmaListaPilotoDrive[] = (turmasPilotoRaw || []).map((p) => {
+    const nomePelaPlanilha = obterNomeTurmaDaPlanilha(p.planilhaNome || p.turmaExibicao);
+    const codigoPelaPlanilha = extrairCodigoCanonicoTurma(p.planilhaNome || nomePelaPlanilha);
+    return {
+      ...p,
+      turmaExibicao: nomePelaPlanilha || p.planilhaNome || p.turmaExibicao,
+      turmaCodigo:
+        codigoPelaPlanilha && /^(FUND_|PRE_|AEE_)/.test(codigoPelaPlanilha)
+          ? codigoPelaPlanilha
+          : p.turmaCodigo
+    };
+  });
+
   const pilotosUsados = new Set<string>();
   const resultados: ComparacaoTurmaPiloto[] = [];
 
