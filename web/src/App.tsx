@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { gasApi, getGasDirectUrl, setGasDirectUrl } from './services/gasApi';
 import DeclaracaoFaltasView from './components/DeclaracaoFaltasView';
+import { DeclaracoesEscolaresView } from './components/DeclaracoesEscolaresView';
 import {
   ListaPilotoHeaderState,
   ListaPilotoSedView,
@@ -43,6 +44,7 @@ import {
   AlunoExtraidoPdf,
   ConfigPublica,
   TipoMovimentacaoAluno,
+  TurmaListaPilotoDrive,
   VinculoAluno
 } from './types/sbf';
 
@@ -54,6 +56,9 @@ type ScreenId =
   | 'processamento'
   | 'conferencia'
   | 'declaracao'
+  | 'declaracaoMatricula'
+  | 'declaracaoTransferencia'
+  | 'declaracaoConclusao'
   | 'listaPiloto'
   | 'configuracoes';
 type TabCicloId =
@@ -118,9 +123,46 @@ export default function App() {
   const [subTabListaPiloto, setSubTabListaPiloto] = useState<SubTabListaPilotoId>('conferencia');
   const [listaPilotoHeaderState, setListaPilotoHeaderState] =
     useState<ListaPilotoHeaderState | null>(null);
+  const [turmasPilotoGlobal, setTurmasPilotoGlobal] = useState<TurmaListaPilotoDrive[]>(() => {
+    try {
+      const cached = sessionStorage.getItem('SBF_CACHE_TURMAS_PILOTO_V1');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  });
+  const [alunoDeclaracaoEscolarInicial, setAlunoDeclaracaoEscolarInicial] = useState<{
+    nome: string;
+    ra?: string;
+    dataNascimento?: string;
+    turma?: string;
+  } | null>(null);
 
   useEffect(() => {
-    if (activeScreen === 'declaracao') {
+    if (turmasPilotoGlobal.length === 0) {
+      gasApi
+        .escanearListasPiloto()
+        .then((resp) => {
+          if (resp?.configurado && resp.turmas?.length) {
+            setTurmasPilotoGlobal(resp.turmas);
+            try {
+              sessionStorage.setItem(
+                'SBF_CACHE_TURMAS_PILOTO_V1',
+                JSON.stringify(resp.turmas)
+              );
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (
+      activeScreen === 'declaracao' ||
+      activeScreen === 'declaracaoMatricula' ||
+      activeScreen === 'declaracaoTransferencia' ||
+      activeScreen === 'declaracaoConclusao'
+    ) {
       setActiveModule('declaracoes');
     } else if (activeScreen === 'listaPiloto') {
       setActiveModule('listaPiloto');
@@ -137,11 +179,24 @@ export default function App() {
   function selecionarModuloPrincipal(mod: ModuleId) {
     setActiveModule(mod);
     if (mod === 'bolsaFamilia') {
-      if (activeScreen === 'declaracao' || activeScreen === 'listaPiloto') {
+      if (
+        activeScreen === 'declaracao' ||
+        activeScreen === 'declaracaoMatricula' ||
+        activeScreen === 'declaracaoTransferencia' ||
+        activeScreen === 'declaracaoConclusao' ||
+        activeScreen === 'listaPiloto'
+      ) {
         setActiveScreen('painel');
       }
     } else if (mod === 'declaracoes') {
-      setActiveScreen('declaracao');
+      if (
+        activeScreen !== 'declaracao' &&
+        activeScreen !== 'declaracaoMatricula' &&
+        activeScreen !== 'declaracaoTransferencia' &&
+        activeScreen !== 'declaracaoConclusao'
+      ) {
+        setActiveScreen('declaracaoMatricula');
+      }
     } else if (mod === 'listaPiloto') {
       setActiveScreen('listaPiloto');
     }
@@ -1245,6 +1300,42 @@ export default function App() {
             {activeModule === 'declaracoes' && (
               <div className="p-2 space-y-1 bg-slate-900/60">
                 <button
+                  onClick={() => setActiveScreen('declaracaoMatricula')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'declaracaoMatricula'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Declaração de Matrícula
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('declaracaoTransferencia')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'declaracaoTransferencia'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Solicitação de Transferência
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('declaracaoConclusao')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'declaracaoConclusao'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Conclusão (Indiv. / Lote)
+                </button>
+
+                <button
                   onClick={() => setActiveScreen('declaracao')}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
                     activeScreen === 'declaracao'
@@ -1322,6 +1413,21 @@ export default function App() {
                       {listaPilotoHeaderState?.salasComMudancaCount}
                     </span>
                   )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveScreen('listaPiloto');
+                    setSubTabListaPiloto('procurarAluno');
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'listaPiloto' && subTabListaPiloto === 'procurarAluno'
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  Procurar Aluno (Ficha)
                 </button>
 
                 <button
@@ -1737,24 +1843,44 @@ export default function App() {
             {activeModule === 'declaracoes' && (
               <>
                 <button
+                  onClick={() => setActiveScreen('declaracaoMatricula')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'declaracaoMatricula'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Matrícula
+                </button>
+                <button
+                  onClick={() => setActiveScreen('declaracaoTransferencia')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'declaracaoTransferencia'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Transferência
+                </button>
+                <button
+                  onClick={() => setActiveScreen('declaracaoConclusao')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'declaracaoConclusao'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Conclusão
+                </button>
+                <button
                   onClick={() => setActiveScreen('declaracao')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
                     activeScreen === 'declaracao'
                       ? 'bg-amber-600 text-white'
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                   }`}
                 >
-                  Emitir Declaração
-                </button>
-                <button
-                  onClick={() => setActiveScreen('diarios')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                    activeScreen === 'diarios'
-                      ? 'bg-amber-600 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  Base de Diários
+                  Com Faltas (CRAS)
                 </button>
                 <button
                   onClick={() => window.print()}
@@ -1951,8 +2077,44 @@ export default function App() {
             <div className="bg-white rounded-2xl border border-slate-200 p-2 flex flex-wrap items-center justify-between gap-2 shadow-xs no-print">
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
+                  onClick={() => setActiveScreen('declaracaoMatricula')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'declaracaoMatricula'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Declaração de Matrícula
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('declaracaoTransferencia')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'declaracaoTransferencia'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Solicitação de Transferência
+                </button>
+
+                <button
+                  onClick={() => setActiveScreen('declaracaoConclusao')}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    activeScreen === 'declaracaoConclusao'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Declaração de Conclusão (Indiv. / Lote)
+                </button>
+
+                <button
                   onClick={() => setActiveScreen('declaracao')}
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                     activeScreen === 'declaracao'
                       ? 'bg-amber-600 text-white shadow-xs'
                       : 'text-slate-700 hover:bg-slate-100'
@@ -1964,14 +2126,14 @@ export default function App() {
 
                 <button
                   onClick={() => setActiveScreen('diarios')}
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                     activeScreen === 'diarios'
                       ? 'bg-amber-600 text-white shadow-xs'
                       : 'text-slate-700 hover:bg-slate-100'
                   }`}
                 >
                   <FolderSearch className="w-3.5 h-3.5" />
-                  Base de Diários da Escola ({turmasConhecidas.length} turmas)
+                  Base de Diários ({turmasConhecidas.length})
                 </button>
               </div>
 
@@ -3472,7 +3634,7 @@ export default function App() {
           )}
 
           {/* ================================================================
-              TELA 4.5: DECLARACAO DE FREQUENCIA DO BOLSA FAMILIA (COM FALTAS)
+              TELA 4.5: DECLARACOES ESCOLARES OFICIAIS (MATRICULA, TRANSFERENCIA, CONCLUSAO E COM FALTAS)
           ================================================================ */}
           {activeScreen === 'declaracao' && (
             <DeclaracaoFaltasView
@@ -3485,6 +3647,25 @@ export default function App() {
             />
           )}
 
+          {(activeScreen === 'declaracaoMatricula' ||
+            activeScreen === 'declaracaoTransferencia' ||
+            activeScreen === 'declaracaoConclusao') && (
+            <DeclaracoesEscolaresView
+              tipoDeclaracao={
+                activeScreen === 'declaracaoMatricula'
+                  ? 'matricula'
+                  : activeScreen === 'declaracaoTransferencia'
+                  ? 'transferencia'
+                  : 'conclusao'
+              }
+              anoReferencia={anoReferencia}
+              turmasPiloto={turmasPilotoGlobal}
+              alunosSugeridosDiarios={alunosSugeridosDeclaracao}
+              alunoInicial={alunoDeclaracaoEscolarInicial}
+              onClearAlunoInicial={() => setAlunoDeclaracaoEscolarInicial(null)}
+            />
+          )}
+
           {/* ================================================================
               TELA 4.8: CONFERENCIA E ATUALIZACAO DE LISTAS PILOTO (SED)
           ================================================================ */}
@@ -3493,6 +3674,35 @@ export default function App() {
               activeSubTab={subTabListaPiloto}
               onChangeSubTab={setSubTabListaPiloto}
               onHeaderStateChange={setListaPilotoHeaderState}
+              onTurmasPilotoLoaded={setTurmasPilotoGlobal}
+              dadosCicloBolsa={dadosCiclo}
+              vinculosBolsa={vinculos}
+              onAbrirDeclaracaoAluno={(tipo, dadosAluno) => {
+                if (tipo === 'faltas') {
+                  if (dadosAluno.ra) {
+                    try {
+                      const raw = localStorage.getItem('SBF_DECLARACAO_RA_CACHE_V1');
+                      const cache = raw ? JSON.parse(raw) : {};
+                      cache[dadosAluno.nome.toUpperCase().trim()] = dadosAluno.ra;
+                      localStorage.setItem('SBF_DECLARACAO_RA_CACHE_V1', JSON.stringify(cache));
+                    } catch {}
+                  }
+                  setAlunoDeclaracaoInicial({
+                    nome: dadosAluno.nome,
+                    turma: dadosAluno.turma || ''
+                  });
+                  setActiveScreen('declaracao');
+                } else {
+                  setAlunoDeclaracaoEscolarInicial(dadosAluno);
+                  setActiveScreen(
+                    tipo === 'matricula'
+                      ? 'declaracaoMatricula'
+                      : tipo === 'transferencia'
+                      ? 'declaracaoTransferencia'
+                      : 'declaracaoConclusao'
+                  );
+                }
+              }}
             />
           )}
 

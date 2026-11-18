@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
+  Camera,
   CheckCircle2,
   ClipboardCheck,
   Copy,
@@ -10,6 +11,8 @@ import {
   FileSpreadsheet,
   FileText,
   FolderOpen,
+  GraduationCap,
+  HeartHandshake,
   Loader2,
   RefreshCw,
   Save,
@@ -20,6 +23,7 @@ import {
   UserCheck,
   UserMinus,
   UserPlus,
+  UserSearch,
   Users,
   X
 } from 'lucide-react';
@@ -30,6 +34,7 @@ import {
   extrairDiaMesCurto,
   extrairListaPilotoDeArquivoPdfLocal,
   extrairRelatorioSedDeArquivoPdf,
+  normalizarNomeAluno,
   obterNomeTurmaDaPlanilha,
   obterRotuloSituacao
 } from '../services/sedExtractor';
@@ -37,12 +42,14 @@ import {
   ComparacaoTurmaPiloto,
   MudancaDetectadaPiloto,
   TurmaListaPilotoDrive,
-  TurmaRelatorioSed
+  TurmaRelatorioSed,
+  VinculoAluno
 } from '../types/sbf';
 
 const STORAGE_KEY_PASTA_PILOTO = 'SBF_PASTA_LISTA_PILOTO_INPUT';
+const SESSION_CACHE_TURMAS_PILOTO = 'SBF_CACHE_TURMAS_PILOTO_V1';
 
-export type SubTabListaPilotoId = 'conferencia' | 'turmas' | 'config';
+export type SubTabListaPilotoId = 'conferencia' | 'procurarAluno' | 'turmas' | 'config';
 
 export interface ListaPilotoHeaderState {
   pastaNome: string;
@@ -57,16 +64,89 @@ export interface ListaPilotoHeaderState {
   onSincronizarDrive: () => void;
 }
 
+export interface InfoBolsaAlunoCruzamento {
+  nomeBolsa: string;
+  nis: string;
+  responsavel?: string;
+  frequenciaPercentual?: string;
+  statusCiclo?: string;
+  abaCiclo?: string;
+}
+
 interface ListaPilotoSedViewProps {
   activeSubTab?: SubTabListaPilotoId;
   onChangeSubTab?: (tab: SubTabListaPilotoId) => void;
   onHeaderStateChange?: (state: ListaPilotoHeaderState) => void;
+  onTurmasPilotoLoaded?: (turmas: TurmaListaPilotoDrive[]) => void;
+  dadosCicloBolsa?: any;
+  vinculosBolsa?: VinculoAluno[];
+  onAbrirDeclaracaoAluno?: (
+    tipo: 'matricula' | 'transferencia' | 'conclusao' | 'faltas',
+    dadosAluno: {
+      nome: string;
+      ra?: string;
+      dataNascimento?: string;
+      turma?: string;
+    }
+  ) => void;
+}
+
+export function traduzirDireitoImagem(imRaw: string): {
+  sigla: string;
+  rotulo: string;
+  corClasse: string;
+} {
+  const val = String(imRaw || '').trim().toUpperCase();
+  if (!val) {
+    return {
+      sigla: 'EM BRANCO',
+      rotulo: 'Sem informação (Em branco)',
+      corClasse: 'bg-slate-100 text-slate-600 border-slate-200'
+    };
+  }
+  if (val === 'P+UE' || val === 'UE+P') {
+    return {
+      sigla: 'P+UE',
+      rotulo: 'Público + Unidade Escolar (Autorizado)',
+      corClasse: 'bg-emerald-100 text-emerald-900 border-emerald-300'
+    };
+  }
+  if (val === 'P') {
+    return {
+      sigla: 'P',
+      rotulo: 'Público (Autorizado)',
+      corClasse: 'bg-blue-100 text-blue-900 border-blue-300'
+    };
+  }
+  if (val === 'UE') {
+    return {
+      sigla: 'UE',
+      rotulo: 'Unidade Escolar (Uso Interno)',
+      corClasse: 'bg-indigo-100 text-indigo-900 border-indigo-300'
+    };
+  }
+  if (val === 'NÃO' || val === 'NAO' || val === 'N') {
+    return {
+      sigla: 'NÃO',
+      rotulo: 'Não Autorizado',
+      corClasse: 'bg-rose-100 text-rose-900 border-rose-300'
+    };
+  }
+  return {
+    sigla: val,
+    rotulo: `Registrado: ${val}`,
+    corClasse: 'bg-amber-100 text-amber-900 border-amber-300'
+  };
 }
 
 export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
   activeSubTab = 'conferencia',
   onChangeSubTab,
-  onHeaderStateChange
+  onHeaderStateChange,
+  onTurmasPilotoLoaded,
+  dadosCicloBolsa,
+  vinculosBolsa = [],
+  onAbrirDeclaracaoAluno
 }) => {
   const [internalSubTab, setInternalSubTab] = useState<SubTabListaPilotoId>(activeSubTab);
   const currentSubTab = onChangeSubTab ? activeSubTab : internalSubTab;
@@ -82,7 +162,13 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
   );
   const [pastaNome, setPastaNome] = useState<string>('');
   const [pastaUrl, setPastaUrl] = useState<string>('');
-  const [turmasPiloto, setTurmasPiloto] = useState<TurmaListaPilotoDrive[]>([]);
+  const [turmasPiloto, setTurmasPiloto] = useState<TurmaListaPilotoDrive[]>(() => {
+    try {
+      const cached = sessionStorage.getItem(SESSION_CACHE_TURMAS_PILOTO);
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return [];
+  });
   const [carregandoPiloto, setCarregandoPiloto] = useState<boolean>(false);
   const [erroPiloto, setErroPiloto] = useState<string>('');
   const [avisosPiloto, setAvisosPiloto] = useState<string[]>([]);
@@ -109,9 +195,15 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
   const [buscaTurmaOuAluno, setBuscaTurmaOuAluno] = useState<string>('');
   const [turmaExpandidaCompleta, setTurmaExpandidaCompleta] = useState<string | null>(null);
 
+  // Estado para a sub-aba "Procurar Aluno (Ficha Completa)"
+  const [termoProcurarAluno, setTermoProcurarAluno] = useState<string>('');
+  const [filtroBolsaProcurar, setFiltroBolsaProcurar] = useState<
+    'TODOS' | 'BOLSA_FAMILIA' | 'APENAS_ATIVOS'
+  >('TODOS');
+  const [filtroImagemProcurar, setFiltroImagemProcurar] = useState<string>('TODOS');
+
   // Estado para a sub-aba "Turmas & Listas Piloto"
   const [turmaSelecionadaConsulta, setTurmaSelecionadaConsulta] = useState<string>('');
-  const [buscaAlunoGlobalPiloto, setBuscaAlunoGlobalPiloto] = useState<string>('');
 
   // Estado de gravação nas planilhas do Google Sheets
   const [salvandoTurmaId, setSalvandoTurmaId] = useState<string | null>(null);
@@ -141,6 +233,18 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
   useEffect(() => {
     carregarListasPilotoDoDrive(false);
   }, []);
+
+  // Notificar App.tsx quando turmasPiloto mudar
+  useEffect(() => {
+    if (onTurmasPilotoLoaded) {
+      onTurmasPilotoLoaded(turmasPiloto);
+    }
+    try {
+      if (turmasPiloto.length > 0) {
+        sessionStorage.setItem(SESSION_CACHE_TURMAS_PILOTO, JSON.stringify(turmasPiloto));
+      }
+    } catch {}
+  }, [turmasPiloto]);
 
   // Recalcular comparações sempre que turmasSed ou turmasPiloto mudarem
   useEffect(() => {
@@ -208,6 +312,57 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     resumo.salasComAlteracao.length,
     carregandoPiloto
   ]);
+
+  // Mapa de alunos do Bolsa Família (cruzando ciclo atual + vínculos NIS permanentes)
+  const mapaBolsaPorNomeNormalizado = useMemo(() => {
+    const mapa = new Map<string, InfoBolsaAlunoCruzamento>();
+
+    // 1. Vínculos salvos
+    for (const v of vinculosBolsa || []) {
+      const nBolsa = normalizarNomeAluno(v.nomeBolsa || '');
+      const nDiario = normalizarNomeAluno(v.nomeDiario || '');
+      const info: InfoBolsaAlunoCruzamento = {
+        nomeBolsa: v.nomeBolsa || v.nomeDiario,
+        nis: v.nis || '',
+        statusCiclo: 'Vínculo Registrado no Bolsa Família'
+      };
+      if (nBolsa) mapa.set(nBolsa, info);
+      if (nDiario) mapa.set(nDiario, info);
+    }
+
+    // 2. Registros do ciclo atual do Bolsa Família (conferidos, abaixo do limite, pendências, movimentações)
+    const visoes = dadosCicloBolsa?.visoes || {};
+    const listasCiclo = [
+      ...(visoes.conferidos?.rows || []),
+      ...(visoes.abaixoLimite?.rows || []),
+      ...(visoes.pendencias?.rows || []),
+      ...(visoes.movimentacoes?.rows || []),
+      ...(visoes.todos?.rows || [])
+    ];
+
+    for (const row of listasCiclo) {
+      const nomeB = String(row['Nome no Bolsa'] || row['Nome Aluno'] || '').trim();
+      const nomeD = String(row['Melhor match no diario'] || '').trim();
+      const nis = String(row['NIS'] || '').trim();
+      const resp = String(row['Responsavel Familiar'] || row['Responsavel'] || '').trim();
+      const freq = String(row['Frequencia (%)'] || row['Percentual'] || '').trim();
+      const status = String(row['Status'] || '').trim();
+
+      const info: InfoBolsaAlunoCruzamento = {
+        nomeBolsa: nomeB || nomeD,
+        nis,
+        responsavel: resp,
+        frequenciaPercentual: freq,
+        statusCiclo: status,
+        abaCiclo: dadosCicloBolsa?.abaCiclo || ''
+      };
+
+      if (nomeB) mapa.set(normalizarNomeAluno(nomeB), info);
+      if (nomeD) mapa.set(normalizarNomeAluno(nomeD), info);
+    }
+
+    return mapa;
+  }, [dadosCicloBolsa, vinculosBolsa]);
 
   async function carregarListasPilotoDoDrive(forcarInputUsuario: boolean) {
     setCarregandoPiloto(true);
@@ -515,24 +670,69 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     });
   }, [comparacoes, filtroStatusSala, buscaTurmaOuAluno]);
 
-  // Busca global de alunos nas planilhas de Lista Piloto (Sub-aba Turmas)
-  const resultadosBuscaGlobalPiloto = useMemo(() => {
-    const q = buscaAlunoGlobalPiloto.trim().toUpperCase();
-    if (!q || q.length < 2) return [];
-    const encontrados: Array<{ turma: TurmaListaPilotoDrive; aluno: any }> = [];
+  // Base enriquecida para a Sub-aba "Procurar Aluno (Ficha Completa)"
+  const todosAlunosEnriquecidos = useMemo(() => {
+    const lista: Array<{
+      turma: TurmaListaPilotoDrive;
+      nomeTurmaExibicao: string;
+      horarioPadrao: string;
+      aluno: any;
+      infoBolsa: InfoBolsaAlunoCruzamento | null;
+      infoImagem: { sigla: string; rotulo: string; corClasse: string };
+    }> = [];
+
     for (const t of turmasPiloto) {
+      const nomeTurma = obterNomeTurmaDaPlanilha(t.planilhaNome || t.turmaExibicao);
+      const ehTarde = /\b(TARDE|VESPERTINO|13:00)\b/i.test(`${nomeTurma} ${t.horarios || ''}`);
+      const horarioPadrao = t.horarios || (ehTarde ? '13:00 às 17:40' : '07:00 às 11:40');
+
       for (const a of t.alunos) {
-        if (
-          a.nome.toUpperCase().includes(q) ||
-          a.ra.toUpperCase().includes(q) ||
-          a.rm.toUpperCase().includes(q)
-        ) {
-          encontrados.push({ turma: t, aluno: a });
-        }
+        const infoBolsa = mapaBolsaPorNomeNormalizado.get(a.nomeNormalizado) || null;
+        const infoImagem = traduzirDireitoImagem(a.direitoImagem);
+        lista.push({
+          turma: t,
+          nomeTurmaExibicao: nomeTurma,
+          horarioPadrao,
+          aluno: a,
+          infoBolsa,
+          infoImagem
+        });
       }
     }
-    return encontrados.slice(0, 50);
-  }, [turmasPiloto, buscaAlunoGlobalPiloto]);
+    return lista;
+  }, [turmasPiloto, mapaBolsaPorNomeNormalizado]);
+
+  const alunosFiltradosProcurar = useMemo(() => {
+    const q = termoProcurarAluno.trim().toUpperCase();
+    return todosAlunosEnriquecidos
+      .filter((item) => {
+        if (filtroBolsaProcurar === 'BOLSA_FAMILIA' && !item.infoBolsa) return false;
+        if (
+          filtroBolsaProcurar === 'APENAS_ATIVOS' &&
+          item.aluno.situacaoNormalizada !== 'ATIVO'
+        ) {
+          return false;
+        }
+        if (filtroImagemProcurar !== 'TODOS') {
+          if (item.infoImagem.sigla !== filtroImagemProcurar) return false;
+        }
+        if (!q) return true;
+        return (
+          item.aluno.nome.toUpperCase().includes(q) ||
+          item.aluno.ra.toUpperCase().includes(q) ||
+          item.aluno.rm.toUpperCase().includes(q) ||
+          item.nomeTurmaExibicao.toUpperCase().includes(q) ||
+          (item.infoBolsa?.nis || '').toUpperCase().includes(q) ||
+          item.aluno.observacoes.toUpperCase().includes(q)
+        );
+      })
+      .slice(0, 60);
+  }, [
+    todosAlunosEnriquecidos,
+    termoProcurarAluno,
+    filtroBolsaProcurar,
+    filtroImagemProcurar
+  ]);
 
   const turmaAtivaDetalhe = useMemo(() => {
     return (
@@ -560,6 +760,18 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                 {resumo.salasComAlteracao.length} c/ mudança
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setSubTab('procurarAluno')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+              currentSubTab === 'procurarAluno'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <UserSearch className="w-4 h-4" />
+            Procurar Aluno (Ficha Completa)
           </button>
 
           <button
@@ -799,7 +1011,9 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                     </span>
                   </div>
                 ) : (
-                  <span>Aguardando upload do relatório PDF da SED para comparar com as Listas Piloto.</span>
+                  <span>
+                    Aguardando upload do relatório PDF da SED para comparar com as Listas Piloto.
+                  </span>
                 )}
               </div>
             </div>
@@ -922,50 +1136,75 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                 </div>
               )}
 
-              {/* Barra de Filtros e Busca */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => setFiltroStatusSala('COM_ALTERACOES')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                      filtroStatusSala === 'COM_ALTERACOES'
-                        ? 'bg-amber-600 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    Com Alterações Pendentes ({resumo.salasComAlteracao.length})
-                  </button>
-                  <button
-                    onClick={() => setFiltroStatusSala('OK_SEM_ALTERACAO')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                      filtroStatusSala === 'OK_SEM_ALTERACAO'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    Salas 100% OK ({resumo.salasOk.length})
-                  </button>
-                  <button
-                    onClick={() => setFiltroStatusSala('TODAS')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                      filtroStatusSala === 'TODAS'
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    Todas as Turmas ({comparacoes.length})
-                  </button>
+              {/* Barra de Filtros e Legenda de Direito de Imagem (IM) */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setFiltroStatusSala('COM_ALTERACOES')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        filtroStatusSala === 'COM_ALTERACOES'
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      Com Alterações Pendentes ({resumo.salasComAlteracao.length})
+                    </button>
+                    <button
+                      onClick={() => setFiltroStatusSala('OK_SEM_ALTERACAO')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        filtroStatusSala === 'OK_SEM_ALTERACAO'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      Salas 100% OK ({resumo.salasOk.length})
+                    </button>
+                    <button
+                      onClick={() => setFiltroStatusSala('TODAS')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        filtroStatusSala === 'TODAS'
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      Todas as Turmas ({comparacoes.length})
+                    </button>
+                  </div>
+
+                  <div className="relative min-w-[260px]">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={buscaTurmaOuAluno}
+                      onChange={(e) => setBuscaTurmaOuAluno(e.target.value)}
+                      placeholder="Buscar nome da planilha/turma, aluno, RA ou sigla..."
+                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-indigo-600 outline-none"
+                    />
+                  </div>
                 </div>
 
-                <div className="relative min-w-[260px]">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={buscaTurmaOuAluno}
-                    onChange={(e) => setBuscaTurmaOuAluno(e.target.value)}
-                    placeholder="Buscar nome da planilha/turma, aluno, RA ou sigla..."
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-indigo-600 outline-none"
-                  />
+                {/* Legenda da coluna IM (Direito de Imagem) */}
+                <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                  <span className="font-bold text-slate-800 flex items-center gap-1">
+                    <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                    Legenda Direito de Imagem (Coluna IM):
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-semibold">
+                    P+UE = Público + Unidade Escolar
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-900 font-semibold">
+                    P = Público
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 font-semibold">
+                    UE = Unidade Escolar
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-900 font-semibold">
+                    NÃO = Não Autorizado
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
+                    Em branco = Sem informação
+                  </span>
                 </div>
               </div>
 
@@ -1003,7 +1242,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                             : 'border-slate-200'
                         }`}
                       >
-                        {/* Cabeçalho da Turma (Nome vindo direto do Nome da Planilha da Lista Piloto) */}
+                        {/* Cabeçalho da Turma */}
                         <div
                           className={`px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b ${
                             comp.statusSala === 'COM_ALTERACOES'
@@ -1135,7 +1374,9 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                                   <th className="py-2.5 px-2 w-24">RM (Escola)</th>
                                   <th className="py-2.5 px-2 w-28">SIT. (Gravar)</th>
                                   <th className="py-2.5 px-2 w-28">DATA MOV.</th>
-                                  <th className="py-2.5 px-2 w-28">IM (Imagem)</th>
+                                  <th className="py-2.5 px-2 w-44">
+                                    IM (Direito de Imagem)
+                                  </th>
                                   <th className="py-2.5 px-3 min-w-[200px]">OBSERVAÇÕES</th>
                                 </tr>
                               </thead>
@@ -1312,38 +1553,27 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                                         />
                                       </td>
 
+                                      {/* Coluna IM: Direito de Imagem (P, UE, P+UE, NÃO ou Em branco) */}
                                       <td className="py-3 px-2">
-                                        <div className="flex items-center gap-1">
-                                          <input
-                                            type="text"
+                                        <div className="space-y-1">
+                                          <select
                                             value={m.direitoImagemGravar}
                                             onChange={(e) =>
                                               atualizarCampoMudanca(
                                                 comp.idComparacao,
                                                 m.id,
                                                 'direitoImagemGravar',
-                                                e.target.value.toUpperCase()
+                                                e.target.value
                                               )
                                             }
-                                            placeholder="P+UE"
-                                            className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-center focus:border-indigo-600 outline-none"
-                                          />
-                                          {m.direitoImagemGravar !== 'P+UE' && (
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                atualizarCampoMudanca(
-                                                  comp.idComparacao,
-                                                  m.id,
-                                                  'direitoImagemGravar',
-                                                  'P+UE'
-                                                )
-                                              }
-                                              className="px-1.5 py-1 rounded bg-slate-100 hover:bg-indigo-100 text-[10px] font-bold text-indigo-700 shrink-0 cursor-pointer"
-                                            >
-                                              P+UE
-                                            </button>
-                                          )}
+                                            className="w-full px-2 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-900 focus:border-indigo-600 outline-none"
+                                          >
+                                            <option value="">(Em branco) Sem info</option>
+                                            <option value="P+UE">P+UE (Público + UE)</option>
+                                            <option value="P">P (Público)</option>
+                                            <option value="UE">UE (Unidade Escolar)</option>
+                                            <option value="NÃO">NÃO (Não autorizado)</option>
+                                          </select>
                                         </div>
                                       </td>
 
@@ -1402,6 +1632,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                                     <th className="py-2 px-2 text-center">Sit. SED</th>
                                     <th className="py-2 px-2 text-center">Data Mov. SED</th>
                                     <th className="py-2 px-3">RA</th>
+                                    <th className="py-2 px-2 text-center">IM</th>
                                     <th className="py-2 px-3">Observações (Piloto)</th>
                                   </tr>
                                 </thead>
@@ -1448,6 +1679,9 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                                         <td className="py-1.5 px-3 font-mono text-[11px]">
                                           {alSed.raFormatado}
                                         </td>
+                                        <td className="py-1.5 px-2 text-center font-semibold">
+                                          {alPil?.direitoImagem || ''}
+                                        </td>
                                         <td className="py-1.5 px-3 text-slate-600">
                                           {alPil?.observacoes || alSed.deficiencia || ''}
                                         </td>
@@ -1470,7 +1704,334 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
       )}
 
       {/* ====================================================================
-          SUB-ABA 2: TURMAS & PLANILHAS DE LISTA PILOTO NO DRIVE
+          SUB-ABA 2: PROCURAR ALUNO (FICHA COMPLETA UNIFICADA)
+      ==================================================================== */}
+      {currentSubTab === 'procurarAluno' && (
+        <div className="space-y-5">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4 shadow-xs">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-bold">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Consulta Unificada • Lista Piloto + Direito de Imagem + Bolsa Família
+                </span>
+                <h2 className="text-lg font-extrabold text-slate-900 mt-1">
+                  Procurar Aluno na Escola (Ficha Completa)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Consulte Nome, RA, RM, Turma, Horário, Situação, Direito de Imagem (IM),
+                  Observações e verifique se o aluno é cadastrado no Bolsa Família.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 font-bold">
+                  Total nas Listas Piloto: {todosAlunosEnriquecidos.length} registros
+                </span>
+              </div>
+            </div>
+
+            {/* Barra de Pesquisa e Filtros Rápidos */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
+              <div className="md:col-span-2 relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={termoProcurarAluno}
+                  onChange={(e) => setTermoProcurarAluno(e.target.value)}
+                  placeholder="Digite o Nome do aluno, RA, RM, Turma ou NIS..."
+                  className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-300 focus:border-indigo-600 outline-none"
+                />
+              </div>
+
+              <div>
+                <select
+                  value={filtroBolsaProcurar}
+                  onChange={(e) => setFiltroBolsaProcurar(e.target.value as any)}
+                  className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-800"
+                >
+                  <option value="TODOS">Todos os Alunos (Ativos e Movimentados)</option>
+                  <option value="APENAS_ATIVOS">Apenas Alunos Ativos</option>
+                  <option value="BOLSA_FAMILIA">Apenas Cadastrados no Bolsa Família</option>
+                </select>
+              </div>
+
+              <div>
+                <select
+                  value={filtroImagemProcurar}
+                  onChange={(e) => setFiltroImagemProcurar(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-300 bg-white text-slate-800"
+                >
+                  <option value="TODOS">Direito de Imagem (IM): Todos</option>
+                  <option value="P+UE">IM: P+UE (Público + Unidade Escolar)</option>
+                  <option value="P">IM: P (Público)</option>
+                  <option value="UE">IM: UE (Unidade Escolar)</option>
+                  <option value="NÃO">IM: NÃO (Não Autorizado)</option>
+                  <option value="EM BRANCO">IM: Em branco (Sem informação)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {todosAlunosEnriquecidos.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-sm text-slate-500">
+              Conecte a pasta das Listas Piloto do Google Drive para consultar a ficha completa dos
+              alunos.
+            </div>
+          ) : alunosFiltradosProcurar.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center text-sm text-slate-500">
+              Nenhum aluno encontrado para os filtros informados.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {alunosFiltradosProcurar.map((item, idx) => {
+                const { aluno, turma, nomeTurmaExibicao, horarioPadrao, infoBolsa, infoImagem } =
+                  item;
+                const ehAtivo = aluno.situacaoNormalizada === 'ATIVO';
+
+                return (
+                  <div
+                    key={`${turma.idUnico}-${aluno.nr}-${idx}`}
+                    className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:border-indigo-300 transition flex flex-col justify-between space-y-4"
+                  >
+                    <div className="space-y-3">
+                      {/* Topo da Ficha: Nome + Status Ativo/Movimentado + Badge Bolsa Família */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-base font-extrabold text-slate-900">
+                              {aluno.nome}
+                            </h3>
+                            <button
+                              onClick={() =>
+                                copiarTexto(aluno.nome, `ficha-nome-${turma.idUnico}-${aluno.nr}`)
+                              }
+                              className="text-slate-400 hover:text-indigo-600"
+                              title="Copiar nome"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            Turma: <strong className="text-indigo-700">{nomeTurmaExibicao}</strong>
+                            {turma.professora ? ` • Profª ${turma.professora}` : ''} • Horário:{' '}
+                            <strong>{horarioPadrao}</strong>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                              ehAtivo
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-200 text-amber-950'
+                            }`}
+                          >
+                            {ehAtivo
+                              ? 'ATIVO'
+                              : `${aluno.situacaoNormalizada}${
+                                  aluno.dataMovimentacao ? ` (${aluno.dataMovimentacao})` : ''
+                                }`}
+                          </span>
+
+                          {infoBolsa ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold">
+                              <HeartHandshake className="w-3 h-3" />
+                              BOLSA FAMÍLIA: SIM
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-semibold">
+                              Bolsa Família: Não consta
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Grade de Dados Escolares (RM, Nº, RA, Nascimento, IM) */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100 text-xs">
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                          <div className="text-[10px] font-bold uppercase text-slate-400">
+                            RM (Unidade)
+                          </div>
+                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">
+                            {aluno.rm || 'Não inf.'}
+                          </div>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                          <div className="text-[10px] font-bold uppercase text-slate-400">
+                            Nº Chamada
+                          </div>
+                          <div className="font-extrabold text-slate-900 text-sm mt-0.5">
+                            Nº {aluno.nr}
+                          </div>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                          <div className="text-[10px] font-bold uppercase text-slate-400">
+                            R.A. do Aluno
+                          </div>
+                          <div className="font-extrabold text-slate-900 font-mono text-xs mt-0.5 flex items-center gap-1">
+                            <span>{aluno.ra || 'Não inf.'}</span>
+                            {aluno.ra && (
+                              <button
+                                onClick={() =>
+                                  copiarTexto(aluno.ra, `ficha-ra-${turma.idUnico}-${aluno.nr}`)
+                                }
+                                className="text-slate-400 hover:text-indigo-600"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                          <div className="text-[10px] font-bold uppercase text-slate-400">
+                            Nascimento
+                          </div>
+                          <div className="font-extrabold text-slate-900 text-xs mt-0.5">
+                            {aluno.dataNascimento || 'Não inf.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Direito de Imagem (IM) e Observações */}
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <div
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border font-bold text-[11px] ${infoImagem.corClasse}`}
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Direito de Imagem (IM): {infoImagem.rotulo}</span>
+                        </div>
+
+                        {aluno.observacoes && (
+                          <div className="px-3 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-[11px] font-semibold">
+                            Obs: <strong>{aluno.observacoes}</strong>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Dados do Bolsa Família quando o aluno é beneficiário */}
+                      {infoBolsa && (
+                        <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-950 space-y-1">
+                          <div className="font-bold flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <HeartHandshake className="w-4 h-4 text-emerald-600" />
+                              Dados no Programa Bolsa Família
+                            </span>
+                            {infoBolsa.nis && (
+                              <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-emerald-200">
+                                NIS: {infoBolsa.nis}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-emerald-800">
+                            {infoBolsa.responsavel && (
+                              <span>
+                                Responsável: <strong>{infoBolsa.responsavel}</strong>
+                              </span>
+                            )}
+                            {infoBolsa.frequenciaPercentual && (
+                              <span>
+                                Frequência Ciclo: <strong>{infoBolsa.frequenciaPercentual}</strong>
+                              </span>
+                            )}
+                            {infoBolsa.statusCiclo && (
+                              <span>
+                                Status: <strong>{infoBolsa.statusCiclo}</strong>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botões Rápidos para Emitir Declaração deste Aluno */}
+                    <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                      {onAbrirDeclaracaoAluno && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            onClick={() =>
+                              onAbrirDeclaracaoAluno('matricula', {
+                                nome: aluno.nome,
+                                ra: aluno.ra,
+                                dataNascimento: aluno.dataNascimento,
+                                turma: nomeTurmaExibicao
+                              })
+                            }
+                            className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-bold cursor-pointer"
+                          >
+                            Decl. Matrícula
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              onAbrirDeclaracaoAluno('transferencia', {
+                                nome: aluno.nome,
+                                ra: aluno.ra,
+                                dataNascimento: aluno.dataNascimento,
+                                turma: nomeTurmaExibicao
+                              })
+                            }
+                            className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-bold cursor-pointer"
+                          >
+                            Decl. Transferência
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              onAbrirDeclaracaoAluno('conclusao', {
+                                nome: aluno.nome,
+                                ra: aluno.ra,
+                                dataNascimento: aluno.dataNascimento,
+                                turma: nomeTurmaExibicao
+                              })
+                            }
+                            className="px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-bold cursor-pointer"
+                          >
+                            Decl. Conclusão
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              onAbrirDeclaracaoAluno('faltas', {
+                                nome: aluno.nome,
+                                ra: aluno.ra,
+                                dataNascimento: aluno.dataNascimento,
+                                turma: nomeTurmaExibicao
+                              })
+                            }
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-[11px] font-bold cursor-pointer"
+                          >
+                            Decl. c/ Faltas (CRAS)
+                          </button>
+                        </div>
+                      )}
+
+                      {turma.planilhaUrl && (
+                        <a
+                          href={turma.planilhaUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:underline"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5" />
+                          Planilha
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ====================================================================
+          SUB-ABA 3: TURMAS & PLANILHAS DE LISTA PILOTO NO DRIVE
       ==================================================================== */}
       {currentSubTab === 'turmas' && (
         <div className="space-y-5">
@@ -1485,48 +2046,14 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                   pasta do Google Drive
                 </p>
               </div>
-              <div className="relative min-w-[280px]">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={buscaAlunoGlobalPiloto}
-                  onChange={(e) => setBuscaAlunoGlobalPiloto(e.target.value)}
-                  placeholder="Pesquisar aluno por Nome, RA ou RM em todas as salas..."
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-indigo-600 outline-none"
-                />
-              </div>
+              <button
+                onClick={() => setSubTab('procurarAluno')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold cursor-pointer"
+              >
+                <UserSearch className="w-4 h-4" />
+                Ir para Procurar Aluno (Ficha Completa)
+              </button>
             </div>
-
-            {resultadosBuscaGlobalPiloto.length > 0 && (
-              <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 space-y-2">
-                <div className="text-xs font-bold text-indigo-950">
-                  Resultados encontrados nas Listas Piloto ({resultadosBuscaGlobalPiloto.length}):
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                  {resultadosBuscaGlobalPiloto.map(({ turma, aluno }, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => {
-                        setTurmaSelecionadaConsulta(turma.idUnico);
-                        setBuscaAlunoGlobalPiloto('');
-                      }}
-                      className="p-2.5 rounded-lg bg-white border border-indigo-200 hover:border-indigo-500 cursor-pointer flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <div className="font-bold text-slate-900">{aluno.nome}</div>
-                        <div className="text-[11px] text-slate-500">
-                          RM: {aluno.rm || '—'} • Nº {aluno.nr} • RA: {aluno.ra || '—'} • Sit:{' '}
-                          {aluno.situacao || 'ATIVO'}
-                        </div>
-                      </div>
-                      <span className="px-2.5 py-1 rounded-md bg-indigo-100 text-indigo-800 font-bold text-[11px]">
-                        {obterNomeTurmaDaPlanilha(turma.planilhaNome)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {turmasPiloto.length === 0 ? (
               <div className="p-8 text-center text-sm text-slate-500">
@@ -1606,31 +2133,41 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
                       <th className="py-2.5 px-2 text-center">DATA MOV.</th>
                       <th className="py-2.5 px-2 text-center">NASC.</th>
                       <th className="py-2.5 px-3">RA</th>
-                      <th className="py-2.5 px-2 text-center">IM</th>
+                      <th className="py-2.5 px-2 text-center">IM (Direito Imagem)</th>
                       <th className="py-2.5 px-3">OBSERVAÇÕES</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {turmaAtivaDetalhe.alunos.map((al) => (
-                      <tr
-                        key={`${al.linhaPlanilha}-${al.nr}`}
-                        className={
-                          al.situacaoNormalizada !== 'ATIVO' ? 'bg-amber-50/70 text-slate-700' : ''
-                        }
-                      >
-                        <td className="py-2 px-3 font-medium">{al.rm || '—'}</td>
-                        <td className="py-2 px-2 text-center font-bold">{al.nr}</td>
-                        <td className="py-2 px-3 font-semibold text-slate-900">{al.nome}</td>
-                        <td className="py-2 px-2 text-center font-bold text-amber-900">
-                          {al.situacao || ''}
-                        </td>
-                        <td className="py-2 px-2 text-center">{al.dataMovimentacao || ''}</td>
-                        <td className="py-2 px-2 text-center">{al.dataNascimento || ''}</td>
-                        <td className="py-2 px-3 font-mono">{al.ra || ''}</td>
-                        <td className="py-2 px-2 text-center">{al.direitoImagem || ''}</td>
-                        <td className="py-2 px-3 text-slate-600">{al.observacoes || ''}</td>
-                      </tr>
-                    ))}
+                    {turmaAtivaDetalhe.alunos.map((al) => {
+                      const infoIm = traduzirDireitoImagem(al.direitoImagem);
+                      return (
+                        <tr
+                          key={`${al.linhaPlanilha}-${al.nr}`}
+                          className={
+                            al.situacaoNormalizada !== 'ATIVO' ? 'bg-amber-50/70 text-slate-700' : ''
+                          }
+                        >
+                          <td className="py-2 px-3 font-medium">{al.rm || '—'}</td>
+                          <td className="py-2 px-2 text-center font-bold">{al.nr}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-900">{al.nome}</td>
+                          <td className="py-2 px-2 text-center font-bold text-amber-900">
+                            {al.situacao || ''}
+                          </td>
+                          <td className="py-2 px-2 text-center">{al.dataMovimentacao || ''}</td>
+                          <td className="py-2 px-2 text-center">{al.dataNascimento || ''}</td>
+                          <td className="py-2 px-3 font-mono">{al.ra || ''}</td>
+                          <td className="py-2 px-2 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded border text-[10px] font-bold ${infoIm.corClasse}`}
+                              title={infoIm.rotulo}
+                            >
+                              {al.direitoImagem || 'Em branco'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-slate-600">{al.observacoes || ''}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1640,7 +2177,7 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
       )}
 
       {/* ====================================================================
-          SUB-ABA 3: PASTA DO DRIVE & CONFIGURAÇÕES DA LISTA PILOTO
+          SUB-ABA 4: PASTA DO DRIVE & CONFIGURAÇÕES DA LISTA PILOTO
       ==================================================================== */}
       {currentSubTab === 'config' && (
         <div className="max-w-3xl bg-white rounded-2xl border border-slate-200 p-6 space-y-5 shadow-xs">
