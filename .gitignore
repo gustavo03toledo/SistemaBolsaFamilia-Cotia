@@ -22,7 +22,8 @@ appsscript.json
 
 # Documentação interna e relatórios de desenvolvimento
 CONTEXT.MD
-docs/
+docs/*
+!docs/MANUAL_DE_USABILIDADE_SISTEMA_ESCOLAR.md
 RELATORIO_MVP2.md
 PLANO_DE_ACAO_MVPS.md
 .agents/

@@ -1,35 +1,46 @@
-# SBF Panorama — Sistema de Conferência de Frequência Escolar do Bolsa Família
+# SBF Panorama — Sistema de Gestão Escolar, Declarações, Lista Piloto, QE e Bolsa Família
 
-Aplicação web moderna em **React + TypeScript + Tailwind CSS** (hospedada na **Vercel**) integrada via Proxy Serverless (`/api/gas`) a um backend em **Google Apps Script + Google Sheets + Google Drive**, projetada para automatizar a conferência bimestral de frequência escolar e a emissão de declarações oficiais para os estudantes beneficiários do Programa Bolsa Família.
+Aplicação web moderna em **React + TypeScript + Tailwind CSS** (hospedada na **Vercel**) integrada via Proxy Serverless (`/api/gas`) a um backend em **Google Apps Script + Google Sheets + Google Drive**, desenvolvida para automatizar rotinas da secretaria escolar: conferência bimestral do Bolsa Família, emissão de declarações em papel timbrado, atualização das Listas Piloto (SED × Drive) e geração do **QE — Quadro Escolar**.
+
+> **Guia para Funcionários (Sem Termos Técnicos):**  
+> Consulte o tutorial completo de uso diário e configuração passo a passo em **[docs/MANUAL_DE_USABILIDADE_SISTEMA_ESCOLAR.md](./docs/MANUAL_DE_USABILIDADE_SISTEMA_ESCOLAR.md)** (dividido em **Parte 1 — Uso Diário** e **Parte 2 — Configurações e Virada de Ano**).
 
 ---
 
-## Visão Geral
+## Visão Geral dos Módulos
 
-O processo manual de conferência do Bolsa Família nas secretarias escolares exige abrir dezenas de diários de classe (`.xlsx` / Google Sheets), localizar cada estudante listado no formulário oficial (`.pdf`), verificar transferências ou remanejamentos, somar presenças e faltas dentro do intervalo de datas de cada mês do ciclo e justificar frequências abaixo do mínimo exigido (**60%** para Educação Infantil e **75%** para Ensino Fundamental). Além disso, a secretaria atende frequentemente a solicitações de declarações de frequência detalhadas com faltas mês a mês solicitadas pelo **CRAS** e por órgãos de assistência social.
+### 1. Bolsa Família (Conferência de Frequência)
+- **Conexão Direta à Pasta de Diários (Google Drive)**: aceita o link ou ID da pasta dos diários pelo Frontend e realiza a varredura recursiva das turmas, separando automaticamente **Educação Infantil (limite 60%)** e **Ensino Fundamental (limite 75%)**.
+- **Índice Acelerado de Alunos (`Indice Alunos Diarios`)**: indexa os alunos das turmas em lotes para acelerar o processamento dos ciclos bimestrais.
+- **Extração Instantânea do PDF no Navegador (`pdfjs-dist`)**: lê o PDF oficial do Bolsa Família diretamente no cliente, exibindo prévia imediata de `Nome`, `Data de Nascimento`, `NIS` e `Responsável Familiar` antes de iniciar a varredura.
+- **Mesa de Conferência por Ciclo Bimestral**:
+  - **Fila de Pendências (Split-View)**: revisão assistida lado a lado com busca por nome, série/turma ou chamada, navegação por teclado (`↑` / `↓`) e avanço automático.
+  - **Tratamento de Movimentação Escolar**: registro de transferências, transferência parcial, remanejamento interno, não pertencente à U.E., abandono ou afastamento justificado.
+  - **Memória Permanente de Vínculos por NIS**: associações manuais e exceções confirmadas ficam vinculadas ao **NIS** e são reaproveitadas nos ciclos seguintes.
+  - **Abaixo do Limite e Aprovação**: tabela operacional com cópia rápida de NIS, edição inline de presenças/faltas, checklist de lançamento, impressão A4 e geração de planilha oficial **Lista Aprovada** no Google Drive.
 
-O **SBF Panorama** transforma toda essa rotina em um fluxo digital ágil, auditável e assistido:
+### 2. Declarações Escolares e com Faltas
+Todas as declarações são geradas em folha **A4 com Papel Timbrado oficial** (com suporte a upload de papel timbrado personalizado e cabeçalho escolar editável):
+- **Declaração de Matrícula**: preenche automaticamente nome, R.A., data de nascimento, ano/turma e horário padrão (**Manhã `07:00 às 11:40`** / **Tarde `13:00 às 17:40`**), sem exibir bloco de faltas.
+- **Solicitação de Transferência**: modelo oficial com prazo de entrega do histórico/documentação (`40 dias`) e observação 100% editáveis.
+- **Declaração de Conclusão (Individual ou em Lote)**: permite emitir para um aluno específico ou gerar **em lote todas as declarações dos alunos ativos de uma turma** selecionada diretamente das Listas Piloto.
+- **Declaração de Frequência com Faltas (CRAS / Bolsa Família)**: calcula automaticamente dias letivos, comparecimentos e percentuais mês a mês (Fevereiro a Dezembro) direto dos diários, destaca meses abaixo do limite em amarelo e **preenche o número do R.A. automaticamente a partir das Listas Piloto** (mantendo edição manual livre).
 
-1. **Conexão Direta à Pasta de Diários (Google Drive)**:
-   - Aceita o link ou ID da pasta dos diários pelo Frontend e realiza a varredura recursiva das turmas, separando automaticamente **Educação Infantil (limite 60%)** e **Ensino Fundamental 1º ao 5º Ano (limite 75%)**.
-2. **Pré-aquecimento do Índice de Alunos (`Indice Alunos Diarios`)**:
-   - Indexa previamente os alunos das turmas em lotes, permitindo calcular a frequência apenas dos candidatos relevantes para o PDF enviado e acelerando o processamento em até 80%.
-3. **Extração Instantânea do PDF no Navegador (`pdfjs-dist`)**:
-   - Lê o PDF oficial do Bolsa Família diretamente no cliente em menos de 1 segundo, exibindo prévia imediata de `Nome`, `Data de Nascimento`, `NIS` e `Responsável Familiar` antes de iniciar a conferência.
-4. **Mesa de Conferência por Ciclo Bimestral**:
-   - **Fila de Pendências (Split-View)**: Revisão assistida lado a lado com busca por nome, série/turma ou número de chamada, navegação rápida por teclado (`↑` / `↓`) e avanço automático para o próximo aluno pendente.
-   - **Tratamento de Alunos Transferidos e Movimentação Escolar**: Modal dedicado para registrar alunos transferidos para outra escola (sem diário), transferidos com frequência parcial no bimestre, remanejados internamente, evasão ou afastamento justificado.
-   - **Memória Permanente de Vínculos por NIS**: Correções manuais e exceções confirmadas ficam associadas ao **NIS** do estudante, sendo reaproveitadas automaticamente nos ciclos seguintes.
-   - **Fila de Lançamento no Portal MEC (`Abaixo do Limite`)**: Tabela operacional focada nos alunos com frequência inferior a 60%/75%, com cópia de NIS em 1 clique, edição inline de presenças/faltas (`P`/`F`), checklist de lançamento e modo de impressão A4.
-5. **Módulo de Declaração de Frequência com Faltas (CRAS / Secretaria)**:
-   - **Emissão Oficial no Modelo CRAS**: Gera declarações de frequência com detalhamento mensal (Fevereiro a Dezembro) exatamente no padrão oficial da Secretaria Municipal de Educação.
-   - **Papel Timbrado Oficial em A4**: Incorpora o cabeçalho timbrado oficial vetorizado/alta resolução da Educação, formatado para impressão direta (`Ctrl+P`) ou gravação em PDF sem margens de corte.
-   - **Cálculo Automático a partir dos Diários**: O sistema busca o aluno e extrai automaticamente os dias letivos, comparecimento, faltas e percentual mês a mês direto da planilha da turma.
-   - **Edição Flexível e Instantânea**: Permite preenchimento manual do R.A., inclusão/exclusão de meses, filtros rápidos por bimestre (1º Bim, 1º e 2º, até o 3º, ou ano completo) e recálculo dinâmico dos totais e percentuais em tempo real.
-   - **Destaque Visual de Alerta**: Destaca automaticamente em amarelo os meses cuja frequência ficou abaixo da meta legal (60% Infantil / 75% Fundamental), facilitando a identificação imediata.
-6. **Gestão Multi-Escola, Multi-Ano e Virada de Ano (`Zerar Ciclos`)**:
-   - Estrutura de pastas e bancos de dados isolados por **Escola** e por **Ano Letivo** (`📁 [Pasta Raiz] / 📁 [Nome da Escola] / 📁 [Ano Letivo]`).
-   - Suporte completo para cadastrar ou alternar escolas, criar novos anos letivos (com migração opcional dos vínculos por NIS) e zerar os ciclos do ano com backup automático em `Historico_Arquivado`.
+### 3. Lista Piloto (Conferência SED × Google Drive & Ficha de Alunos)
+- **Comparação Automática SED × Drive**: compara o relatório PDF **"Alunos por Classe"** da SED com as planilhas das Listas Piloto no Google Drive, identificando chegadas (`MS`), movimentações (`BXTR`, `TRAN`, `NCOM`, `REMA`, `CEDE`, `ABAN`) e preenchimento de R.A. ausente.
+- **Direito de Imagem (`IM`) e Observações Acumulativas**: seleção rápida de `P+UE`, `P`, `UE`, `NÃO` ou em branco, além de marcadores acumulativos configuráveis para a coluna `OBS` (ex.: `@`, `TEG`, `TIO TIAGO`, `TIO ZEZINHO` e outras peruas escolares).
+- **Sub-aba Procurar e Editar Aluno**: pesquisa unificada por nome, R.A., RM, NIS ou observação, com filtros por ano/série, sala específica, transporte/peruas e vínculo no Bolsa Família, permitindo edição direta na planilha do Google Drive e atalho para emitir declarações.
+- **Turmas & Planilhas no Drive**: visualização individual por sala com totais de ativos, movimentados e acesso direto à planilha.
+
+### 4. QE — Quadro Escolar
+- **Adaptação Dinâmica Ano a Ano**: lê automaticamente os nomes das planilhas de Listas Piloto, a contagem de alunos ativos e os turnos (**MANHÃ** na linha superior e **TARDE** na linha inferior, com suporte a `AEE`).
+- **Capacidades Editáveis Persistidas no Banco de Dados**: edição inline da capacidade de cada sala gravada diretamente na aba **`Quadro Escolar`** do Banco de Dados no Google Sheets.
+- **Consolidação por Etapas e Resumo de Matrículas**: cálculo automático de `Cap. da Sala`, `Quant. Salas`, `Total de Alunos`, `Capacidade`, `Vagas`, `Período`, `Total Manhã`, `Total Tarde`, `Total sem AEE` e `Total Geral`.
+- **Impressão em A4 Paisagem**: botão dedicado **Imprimir Quadro Escolar (QE)** abaixo dos quadros, gerando versão limpa para impressão ou PDF.
+
+### 5. Gestão Multi-Escola, Multi-Ano e Vinculação Manual de Banco/Pastas
+- Estrutura isolada por **Escola** e **Ano Letivo** no Google Drive (`[Pasta Raiz] / [Nome da Escola] / [Ano Letivo]`).
+- Suporte para cadastrar/alternar escolas, abrir novos anos letivos, zerar ciclos com backup automático em `Historico_Arquivado`, e **vincular manualmente IDs/links de Banco de Dados, Pasta do Ano e Pasta da Escola** pela tela de Configurações (ideal para reaproveitar bancos existentes ou operar instâncias separadas por unidade escolar).
 
 ---
 
@@ -38,10 +49,10 @@ O **SBF Panorama** transforma toda essa rotina em um fluxo digital ágil, audit�
 ```mermaid
 flowchart LR
   subgraph Cliente["Frontend (React + Vite na Vercel)"]
-    UI["Interface Operacional\n(React 18 + TypeScript + Tailwind)"]
-    PDF["Extrator PDF Client-Side\n(pdfjs-dist)"]
-    DEC["Emissor de Declarações com Faltas\n(Papel Timbrado A4 + CRAS)"]
-    SWR["Cache Instantâneo SWR\n(sessionStorage 5 min)"]
+    UI["Interface Operacional\n(Bolsa, Declarações, Lista Piloto, QE)"]
+    PDF["Leitura Client-Side de PDFs\n(Bolsa Família, SED e Piloto)"]
+    DEC["Emissor A4 + Impressão QE\n(Timbrado Oficial e Quadros)"]
+    SWR["Cache Instantâneo SWR\n(sessionStorage)"]
   end
 
   subgraph Proxy["Vercel Serverless Function"]
@@ -50,8 +61,8 @@ flowchart LR
 
   subgraph Google["Backend Google Workspace (Apps Script)"]
     GAS["Web App JSON API\n(doPost / doGet)"]
-    DB["Bancos Anuais no Google Sheets\n(Por Escola e Ano Letivo)"]
-    DRIVE["Google Drive\n(Diários Somente-Leitura + Pasta de Saída)"]
+    DB["Bancos Anuais no Google Sheets\n(Bolsa, Vínculos e Quadro Escolar)"]
+    DRIVE["Google Drive\n(Diários, Listas Piloto e Saída)"]
   end
 
   UI --> PDF
@@ -72,7 +83,7 @@ flowchart LR
   - [Vite 6](https://vite.dev/)
   - [Tailwind CSS 4](https://tailwindcss.com/)
   - [Lucide Icons](https://lucide.dev/)
-  - [PDF.js (`pdfjs-dist`)](https://mozilla.github.io/pdf.js/) para leitura de PDFs oficiais no navegador
+  - [PDF.js (`pdfjs-dist`)](https://mozilla.github.io/pdf.js/) para leitura client-side de PDFs do Bolsa Família e da SED
 - **Hospedagem & Serverless Proxy**:
   - [Vercel](https://vercel.com/) (`vercel.json` + Serverless Function em `api/gas.ts`)
 - **Integração Backend**:
@@ -80,36 +91,46 @@ flowchart LR
 
 ---
 
-## Estrutura de Pastas (Frontend)
+## Estrutura de Pastas (Repositório GitHub)
 
 ```text
 ├── api/
-│   └── gas.ts                     # Serverless Function (Proxy para o Google Apps Script na Vercel)
+│   └── gas.ts                                       # Serverless Function (Proxy para Google Apps Script na Vercel)
+├── docs/
+│   └── MANUAL_DE_USABILIDADE_SISTEMA_ESCOLAR.md   # Manual completo para funcionários (uso diário e configuração)
 ├── web/
 │   ├── api/
-│   │   └── gas.ts                 # Serverless Function (compatível quando Root Directory = web)
+│   │   └── gas.ts                                   # Serverless Function (compatível quando Root Directory = web)
 │   ├── public/
-│   │   └── timbrado-cotia.png     # Cabeçalho timbrado oficial da Secretaria de Educação (A4)
+│   │   └── timbrado-cotia.png                       # Cabeçalho timbrado oficial padrão (A4)
 │   ├── src/
 │   │   ├── components/
-│   │   │   └── DeclaracaoFaltasView.tsx # Emissor de Declaração de Frequência do Bolsa Família / CRAS
+│   │   │   ├── DeclaracaoFaltasView.tsx             # Declaração com faltas (CRAS) e busca automática de RA
+│   │   │   ├── DeclaracoesEscolaresView.tsx         # Matrícula, Solicitação de Transferência e Conclusão (Lote/Indiv.)
+│   │   │   ├── ListaPilotoSedView.tsx               # Conferência SED × Listas Piloto, Ficha de Alunos e Peruas/OBS
+│   │   │   ├── QuadroEscolarView.tsx                # QE - Quadro Escolar dinâmico, capacidades editáveis e impressão A4
+│   │   │   └── RevisaoSplitView.tsx                 # Revisão assistida lado a lado da Mesa de Conferência
 │   │   ├── services/
-│   │   │   ├── gasApi.ts          # Cliente HTTP tipado para todas as actions da API
-│   │   │   └── pdfExtractor.ts    # Extrator client-side de PDFs do Bolsa Família e links do Drive
+│   │   │   ├── configEscolarStore.ts                # Armazenamento local de timbrado, cabeçalho e marcadores OBS
+│   │   │   ├── gasApi.ts                            # Cliente HTTP tipado para todas as actions da API
+│   │   │   ├── pdfExtractor.ts                      # Extração client-side de PDFs do Bolsa Família e IDs do Drive
+│   │   │   └── sedExtractor.ts                      # Extração de PDFs da SED e cruzamento com Listas Piloto
 │   │   ├── types/
-│   │   │   └── sbf.ts             # Tipagens TypeScript (Ciclos, Alunos, Declarações, Movimentações, Escolas, Anos)
-│   │   ├── App.tsx                # Aplicação principal (Painel, Diários, PDF, Mesa, Declaração, Configurações)
-│   │   ├── main.tsx               # Ponto de entrada React
-│   │   └── index.css              # Estilos globais e regras de impressão A4 (@media print)
-│   ├── .env.example               # Modelo de variáveis de ambiente
-│   ├── index.html                 # Template HTML principal
-│   ├── package.json               # Dependências e scripts do Frontend
-│   ├── tsconfig.json              # Configuração TypeScript
-│   ├── vercel.json                # Rewrites para SPA + API na Vercel
-│   └── vite.config.ts             # Configuração do bundler Vite
-├── .env.example                   # Modelo de variáveis de ambiente na raiz
-├── package.json                   # Scripts unificados de build/dev na raiz
-└── vercel.json                    # Configuração de build e rotas da Vercel na raiz
+│   │   │   └── sbf.ts                               # Tipagens TypeScript (Ciclos, Alunos, Piloto, QE, Escolas)
+│   │   ├── App.tsx                                  # Aplicação principal e roteamento dos 4 módulos
+│   │   ├── main.tsx                                 # Ponto de entrada React
+│   │   └── index.css                                # Estilos globais Tailwind e regras de impressão A4
+│   ├── .env.example                                 # Modelo de variáveis de ambiente
+│   ├── index.html                                   # Template HTML principal
+│   ├── package.json                                 # Dependências e scripts do Frontend
+│   ├── README.md                                    # Documentação espelhada quando Root Directory = web
+│   ├── tsconfig.json                                # Configuração TypeScript
+│   ├── vercel.json                                  # Rewrites para SPA + API na Vercel
+│   └── vite.config.ts                               # Configuração do bundler Vite
+├── .env.example                                     # Modelo de variáveis de ambiente na raiz
+├── package.json                                     # Scripts unificados de build/dev na raiz
+├── README.md                                        # Documentação principal do projeto
+└── vercel.json                                      # Configuração de build e rotas da Vercel na raiz
 ```
 
 ---
@@ -158,7 +179,7 @@ npm --prefix web run build
 
 ## Como Hospedar na Vercel
 
-O repositório está configurado para publicação instantânea na Vercel:
+O repositório está pronto para publicação na Vercel (inclusive para múltiplas unidades escolares em projetos isolados):
 
 1. Acesse [vercel.com/new](https://vercel.com/new) e importe o repositório do GitHub.
 2. Em **Environment Variables**, adicione `GAS_WEBAPP_URL` e `VITE_GAS_WEBAPP_URL` apontando para a URL `/exec` da implantação do seu Google Apps Script.
@@ -168,4 +189,4 @@ O repositório está configurado para publicação instantânea na Vercel:
 
 ## Privacidade e Proteção de Dados (LGPD)
 
-Este repositório contém **exclusivamente o código-fonte da aplicação**. Nenhum dado pessoal de alunos (nomes, NIS, datas de nascimento), PDFs do Bolsa Família, planilhas de diários de classe ou credenciais privadas de acesso ao Google Drive fazem parte deste repositório ou de seus arquivos de configuração.
+Este repositório contém **exclusivamente o código-fonte do frontend e a documentação de uso**. Nenhum dado pessoal de alunos (nomes, NIS, RA, datas de nascimento), PDFs do Bolsa Família/SED, planilhas de diários de classe ou credenciais privadas de acesso ao Google Drive fazem parte deste repositório ou de seus arquivos de configuração.
