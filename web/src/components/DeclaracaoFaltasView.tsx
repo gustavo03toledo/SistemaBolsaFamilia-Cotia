@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search,
   Printer,
@@ -16,6 +16,12 @@ import {
   temPapelTimbradoCustomizado
 } from '../services/configEscolarStore';
 import { gasApi } from '../services/gasApi';
+import {
+  extrairCodigoCanonicoTurma,
+  normalizarNomeAluno,
+  obterNomeTurmaDaPlanilha
+} from '../services/sedExtractor';
+import { TurmaListaPilotoDrive } from '../types/sbf';
 
 export interface MesDeclaracao {
   mesNumero: number;
@@ -74,8 +80,9 @@ interface Props {
   escolaPadraoNome: string;
   anoReferencia: number;
   turmasConhecidas: string[];
+  turmasPiloto?: TurmaListaPilotoDrive[];
   alunosSugeridos: { nome: string; turma: string; nis?: string }[];
-  alunoInicial?: { nome: string; turma: string } | null;
+  alunoInicial?: { nome: string; turma: string; ra?: string } | null;
   onClearAlunoInicial?: () => void;
 }
 
@@ -83,6 +90,7 @@ export default function DeclaracaoFaltasView({
   escolaPadraoNome,
   anoReferencia,
   turmasConhecidas,
+  turmasPiloto = [],
   alunosSugeridos,
   alunoInicial,
   onClearAlunoInicial
@@ -102,6 +110,7 @@ export default function DeclaracaoFaltasView({
   const [etapaEnsino, setEtapaEnsino] = useState<'INFANTIL' | 'FUNDAMENTAL'>('FUNDAMENTAL');
   const [nomeAluno, setNomeAluno] = useState('');
   const [raAluno, setRaAluno] = useState('');
+  const [raEncontradoNaPiloto, setRaEncontradoNaPiloto] = useState(false);
   const [serieTurma, setSerieTurma] = useState('');
   const [usarSublinhadosTexto, setUsarSublinhadosTexto] = useState(false);
   const [modoAptoMesZerado, setModoAptoMesZerado] = useState<'NAO' | 'VAZIO'>('VAZIO');
@@ -128,6 +137,79 @@ export default function DeclaracaoFaltasView({
   const [anoAssinatura, setAnoAssinatura] = useState(String(anoReferencia || hoje.getFullYear()));
   const [usarSublinhadosData, setUsarSublinhadosData] = useState(false);
 
+  // Lista unificada de alunos (Diários/Bolsa Família + Listas Piloto) para autocomplete
+  const alunosSugeridosCombinados = useMemo(() => {
+    const mapa = new Map<string, { nome: string; turma: string; nis?: string; ra?: string }>();
+    for (const t of turmasPiloto || []) {
+      const nomeTurma = obterNomeTurmaDaPlanilha(t.planilhaNome || t.turmaExibicao);
+      for (const a of t.alunos || []) {
+        if (!a.nome) continue;
+        const chave = normalizarNomeAluno(a.nome);
+        if (!chave) continue;
+        const atual = mapa.get(chave);
+        if (!atual || (!atual.ra && a.ra)) {
+          mapa.set(chave, {
+            nome: a.nome,
+            turma: nomeTurma || atual?.turma || '',
+            nis: atual?.nis,
+            ra: a.ra || atual?.ra || ''
+          });
+        }
+      }
+    }
+    for (const s of alunosSugeridos || []) {
+      if (!s.nome) continue;
+      const chave = normalizarNomeAluno(s.nome);
+      if (!chave) continue;
+      const atual = mapa.get(chave);
+      if (!atual) {
+        mapa.set(chave, { nome: s.nome, turma: s.turma || '', nis: s.nis });
+      } else if (!atual.turma && s.turma) {
+        mapa.set(chave, { ...atual, turma: s.turma, nis: s.nis || atual.nis });
+      }
+    }
+    return Array.from(mapa.values()).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [turmasPiloto, alunosSugeridos]);
+
+  // Busca o RA diretamente nas Listas Piloto carregadas (priorizando mesma turma e aluno ativo)
+  function buscarRaEmListasPiloto(nomeAlvo: string, turmaAlvo?: string): string {
+    const alvoNorm = normalizarNomeAluno(nomeAlvo);
+    if (!alvoNorm || !turmasPiloto || turmasPiloto.length === 0) return '';
+
+    const turmaCodigoAlvo = turmaAlvo ? extrairCodigoCanonicoTurma(turmaAlvo) : '';
+    const turmaNormAlvo = normalizarNomeAluno(turmaAlvo || '');
+
+    let melhorSemTurma = '';
+    let melhorSemTurmaAtivo = '';
+
+    for (const t of turmasPiloto) {
+      const nomeTurmaT = obterNomeTurmaDaPlanilha(t.planilhaNome || t.turmaExibicao);
+      const codigoT = t.turmaCodigo || extrairCodigoCanonicoTurma(nomeTurmaT);
+      const turmaNormT = normalizarNomeAluno(nomeTurmaT);
+      const mesmaTurma = Boolean(
+        (turmaCodigoAlvo && codigoT && turmaCodigoAlvo === codigoT) ||
+          (turmaNormAlvo &&
+            turmaNormT &&
+            (turmaNormT.includes(turmaNormAlvo) || turmaNormAlvo.includes(turmaNormT)))
+      );
+
+      for (const a of t.alunos || []) {
+        const raLimpo = String(a.ra || '').trim();
+        if (!raLimpo) continue;
+        const nomeAlunoT = a.nomeNormalizado || normalizarNomeAluno(a.nome);
+        if (nomeAlunoT !== alvoNorm) continue;
+
+        const ehAtivo = !a.situacaoNormalizada || a.situacaoNormalizada === 'ATIVO';
+        if (mesmaTurma && ehAtivo) return raLimpo;
+        if (mesmaTurma && !melhorSemTurmaAtivo) melhorSemTurmaAtivo = raLimpo;
+        if (ehAtivo && !melhorSemTurmaAtivo) melhorSemTurmaAtivo = raLimpo;
+        if (!melhorSemTurma) melhorSemTurma = raLimpo;
+      }
+    }
+
+    return melhorSemTurmaAtivo || melhorSemTurma || '';
+  }
+
   // Atualiza nome da escola se mudar no contexto
   useEffect(() => {
     if (escolaPadraoNome && escolaPadraoNome !== 'Escola Ativa') {
@@ -135,12 +217,28 @@ export default function DeclaracaoFaltasView({
     }
   }, [escolaPadraoNome]);
 
-  // Se vier um aluno selecionado da aba Abaixo do Limite, dispara a busca automaticamente
+  // Se as Listas Piloto terminarem de carregar depois que um aluno já foi buscado, completa o RA automaticamente
+  useEffect(() => {
+    if (!nomeAluno.trim() || raAluno.trim()) return;
+    const raPiloto = buscarRaEmListasPiloto(nomeAluno, serieTurma || buscaTurma);
+    if (raPiloto) {
+      setRaAluno(raPiloto);
+      setRaEncontradoNaPiloto(true);
+      salvarRaNoCache(nomeAluno, raPiloto);
+    }
+  }, [turmasPiloto, nomeAluno, serieTurma]);
+
+  // Se vier um aluno selecionado da aba Abaixo do Limite ou Lista Piloto, dispara a busca automaticamente
   useEffect(() => {
     if (alunoInicial && alunoInicial.nome) {
       setBuscaNome(alunoInicial.nome);
       setBuscaTurma(alunoInicial.turma || '');
-      executarBuscaDiario(alunoInicial.nome, alunoInicial.turma || '', '');
+      if (alunoInicial.ra) {
+        setRaAluno(alunoInicial.ra);
+        setRaEncontradoNaPiloto(true);
+        salvarRaNoCache(alunoInicial.nome, alunoInicial.ra);
+      }
+      executarBuscaDiario(alunoInicial.nome, alunoInicial.turma || '', '', alunoInicial.ra || '');
       if (onClearAlunoInicial) {
         onClearAlunoInicial();
       }
@@ -150,12 +248,16 @@ export default function DeclaracaoFaltasView({
   // Salva/recupera RA por nome do aluno no localStorage
   function carregarRaSalvo(nome: string): string {
     if (!nome) return '';
+    const chave = nome.trim().toUpperCase();
     try {
       const mapa = JSON.parse(localStorage.getItem('SBF_RA_ALUNOS_MAP_V1') || '{}');
-      return mapa[nome.trim().toUpperCase()] || '';
-    } catch {
-      return '';
-    }
+      if (mapa[chave]) return mapa[chave];
+    } catch {}
+    try {
+      const cache = JSON.parse(localStorage.getItem('SBF_DECLARACAO_RA_CACHE_V1') || '{}');
+      if (cache[chave]) return cache[chave];
+    } catch {}
+    return '';
   }
 
   function salvarRaNoCache(nome: string, ra: string) {
@@ -171,6 +273,7 @@ export default function DeclaracaoFaltasView({
 
   function handleChangeRa(novoRa: string) {
     setRaAluno(novoRa);
+    setRaEncontradoNaPiloto(false);
     if (nomeAluno) {
       salvarRaNoCache(nomeAluno, novoRa);
     }
@@ -243,7 +346,12 @@ export default function DeclaracaoFaltasView({
     );
   }
 
-  async function executarBuscaDiario(nomeAlvo?: string, turmaAlvo?: string, arquivoIdAlvo?: string) {
+  async function executarBuscaDiario(
+    nomeAlvo?: string,
+    turmaAlvo?: string,
+    arquivoIdAlvo?: string,
+    raExplicito?: string
+  ) {
     const nome = typeof nomeAlvo === 'string' ? nomeAlvo : buscaNome;
     const turma = typeof turmaAlvo === 'string' ? turmaAlvo : buscaTurma;
     if (!nome.trim() && !turma.trim()) {
@@ -276,12 +384,18 @@ export default function DeclaracaoFaltasView({
       if (al.escolaNome && al.escolaNome !== 'Escola Ativa') {
         setEscolaNome(al.escolaNome);
       }
-      setNomeAluno(al.nomeAluno || nome.trim());
-      setSerieTurma(al.turma || turma.trim());
+      const nomeFinal = al.nomeAluno || nome.trim();
+      const turmaFinal = al.turma || turma.trim();
+      setNomeAluno(nomeFinal);
+      setSerieTurma(turmaFinal);
 
-      const raSalvo = carregarRaSalvo(al.nomeAluno || nome.trim());
-      if (raSalvo) {
-        setRaAluno(raSalvo);
+      const raDaPiloto = buscarRaEmListasPiloto(nomeFinal, turmaFinal) || String(raExplicito || '').trim();
+      const raSalvo = carregarRaSalvo(nomeFinal);
+      const raFinal = raDaPiloto || raSalvo || '';
+      setRaAluno(raFinal);
+      setRaEncontradoNaPiloto(Boolean(raDaPiloto));
+      if (raFinal) {
+        salvarRaNoCache(nomeFinal, raFinal);
       }
 
       const listaMesesApi: MesDeclaracao[] = (res?.meses || []).map((m: any) =>
@@ -487,11 +601,18 @@ export default function DeclaracaoFaltasView({
                 onChange={(e) => {
                   const val = e.target.value;
                   setBuscaNome(val);
-                  const achado = alunosSugeridos.find(
-                    (a) => a.nome.toUpperCase() === val.trim().toUpperCase()
+                  const achado = alunosSugeridosCombinados.find(
+                    (a) => normalizarNomeAluno(a.nome) === normalizarNomeAluno(val)
                   );
-                  if (achado && achado.turma && !buscaTurma) {
-                    setBuscaTurma(achado.turma);
+                  if (achado) {
+                    if (achado.turma && !buscaTurma) {
+                      setBuscaTurma(achado.turma);
+                    }
+                    if (achado.ra) {
+                      setRaAluno(achado.ra);
+                      setRaEncontradoNaPiloto(true);
+                      salvarRaNoCache(achado.nome, achado.ra);
+                    }
                   }
                 }}
                 onKeyDown={(e) => {
@@ -503,9 +624,10 @@ export default function DeclaracaoFaltasView({
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
               <datalist id="lista-alunos-declaracao">
-                {alunosSugeridos.map((al, i) => (
+                {alunosSugeridosCombinados.map((al, i) => (
                   <option key={i} value={al.nome}>
                     {al.turma ? `${al.turma} — ${al.nome}` : al.nome}
+                    {al.ra ? ` (RA: ${al.ra})` : ''}
                   </option>
                 ))}
               </datalist>
@@ -673,15 +795,26 @@ export default function DeclaracaoFaltasView({
 
             <div>
               <label className="block text-xs font-bold text-amber-800 mb-1">
-                R.A. Nº do Aluno (Manual) *
+                R.A. Nº do Aluno (Lista Piloto / Editável)
               </label>
               <input
                 type="text"
                 value={raAluno}
                 onChange={(e) => handleChangeRa(e.target.value)}
                 placeholder="Ex: 126.511.136-4"
-                className="w-full px-3.5 py-2 rounded-xl border-2 border-amber-400 bg-amber-50/40 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className={`w-full px-3.5 py-2 rounded-xl border-2 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 ${
+                  raEncontradoNaPiloto
+                    ? 'border-emerald-400 bg-emerald-50/40 focus:ring-emerald-500'
+                    : 'border-amber-400 bg-amber-50/40 focus:ring-amber-500'
+                }`}
               />
+              <span className="block text-[10px] text-slate-500 mt-1">
+                {raEncontradoNaPiloto
+                  ? 'Preenchido automaticamente da Lista Piloto (editável).'
+                  : turmasPiloto.length > 0
+                  ? 'Se não constar na Lista Piloto, digite ou ajuste aqui.'
+                  : 'Conecte a Lista Piloto para preencher automático ou digite aqui.'}
+              </span>
             </div>
 
             <div>

@@ -310,6 +310,7 @@ export default function App() {
   const [alunoDeclaracaoInicial, setAlunoDeclaracaoInicial] = useState<{
     nome: string;
     turma: string;
+    ra?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -3686,6 +3687,7 @@ export default function App() {
               escolaPadraoNome={escolaAtiva?.nome || ''}
               anoReferencia={anoReferencia}
               turmasConhecidas={turmasConhecidas}
+              turmasPiloto={turmasPilotoGlobal}
               alunosSugeridos={alunosSugeridosDeclaracao}
               alunoInicial={alunoDeclaracaoInicial}
               onClearAlunoInicial={() => setAlunoDeclaracaoInicial(null)}
@@ -3734,7 +3736,8 @@ export default function App() {
                   }
                   setAlunoDeclaracaoInicial({
                     nome: dadosAluno.nome,
-                    turma: dadosAluno.turma || ''
+                    turma: dadosAluno.turma || '',
+                    ra: dadosAluno.ra || ''
                   });
                   setActiveScreen('declaracao');
                 } else {
