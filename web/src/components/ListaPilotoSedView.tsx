@@ -17,6 +17,7 @@ import {
   HeartHandshake,
   Loader2,
   Plus,
+  Printer,
   RefreshCw,
   RotateCcw,
   Save,
@@ -61,6 +62,51 @@ import {
 
 const STORAGE_KEY_PASTA_PILOTO = 'SBF_PASTA_LISTA_PILOTO_INPUT';
 const SESSION_CACHE_TURMAS_PILOTO = 'SBF_CACHE_TURMAS_PILOTO_V1';
+const SESSION_EDICOES_APLICADAS_PILOTO = 'SBF_PILOTO_EDICOES_APLICADAS_V1';
+
+export interface RegistroEdicaoPilotoAplicada {
+  id: string;
+  chaveUnica: string;
+  aplicadoEm: string;
+  origem: 'CONFERENCIA_SALA' | 'CONFERENCIA_LOTE' | 'EDICAO_DIRETA';
+  turmaExibicao: string;
+  planilhaNome: string;
+  professora?: string;
+  tipo: string;
+  nr: number;
+  nome: string;
+  rmAntes?: string;
+  rmDepois: string;
+  situacaoAntes?: string;
+  situacaoDepois: string;
+  dataMovAntes?: string;
+  dataMovDepois: string;
+  raAntes?: string;
+  raDepois: string;
+  dataNascimentoDepois?: string;
+  imAntes?: string;
+  imDepois: string;
+  obsAntes?: string;
+  obsDepois: string;
+  descricaoMudanca?: string;
+}
+
+function escaparHtmlPrint(texto: string): string {
+  return String(texto || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatarAntesDepoisHtml(antes: string | undefined, depois: string | undefined): string {
+  const a = String(antes || '').trim();
+  const d = String(depois || '').trim();
+  if (!a && !d) return '<span class="muted">—</span>';
+  if (!a || a === d) return `<strong>${escaparHtmlPrint(d || '—')}</strong>`;
+  return `<span class="old">${escaparHtmlPrint(a)}</span> &rarr; <strong>${escaparHtmlPrint(d || '(vazio)')}</strong>`;
+}
 
 export type SubTabListaPilotoId = 'conferencia' | 'procurarAluno' | 'turmas' | 'config';
 
@@ -285,8 +331,28 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     ra: string;
     direitoImagem: string;
     observacoes: string;
+    antes?: {
+      rm: string;
+      nome: string;
+      situacao: string;
+      dataMovimentacao: string;
+      ra: string;
+      direitoImagem: string;
+      observacoes: string;
+    };
   } | null>(null);
   const [salvandoEdicaoAluno, setSalvandoEdicaoAluno] = useState<boolean>(false);
+
+  // Histórico de alterações já aplicadas no Drive durante a sessão (para impressão consolidada)
+  const [atualizacoesAplicadasLog, setAtualizacoesAplicadasLog] = useState<
+    RegistroEdicaoPilotoAplicada[]
+  >(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_EDICOES_APLICADAS_PILOTO);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
 
   // Estado para a sub-aba "Turmas & Listas Piloto"
   const [turmaSelecionadaConsulta, setTurmaSelecionadaConsulta] = useState<string>('');
@@ -608,6 +674,267 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
     );
   }
 
+  useEffect(() => {
+    try {
+      if (atualizacoesAplicadasLog.length > 0) {
+        sessionStorage.setItem(
+          SESSION_EDICOES_APLICADAS_PILOTO,
+          JSON.stringify(atualizacoesAplicadasLog)
+        );
+      } else {
+        sessionStorage.removeItem(SESSION_EDICOES_APLICADAS_PILOTO);
+      }
+    } catch {}
+  }, [atualizacoesAplicadasLog]);
+
+  function registrarEdicoesAplicadasNoHistorico(novosItens: RegistroEdicaoPilotoAplicada[]) {
+    if (!novosItens.length) return;
+    setAtualizacoesAplicadasLog((prev) => {
+      const mapa = new Map<string, RegistroEdicaoPilotoAplicada>();
+      for (const item of prev) {
+        mapa.set(item.chaveUnica, item);
+      }
+      for (const novo of novosItens) {
+        const existente = mapa.get(novo.chaveUnica);
+        if (existente) {
+          mapa.set(novo.chaveUnica, {
+            ...novo,
+            rmAntes: existente.rmAntes ?? novo.rmAntes,
+            situacaoAntes: existente.situacaoAntes ?? novo.situacaoAntes,
+            dataMovAntes: existente.dataMovAntes ?? novo.dataMovAntes,
+            raAntes: existente.raAntes ?? novo.raAntes,
+            imAntes: existente.imAntes ?? novo.imAntes,
+            obsAntes: existente.obsAntes ?? novo.obsAntes
+          });
+        } else {
+          mapa.set(novo.chaveUnica, novo);
+        }
+      }
+      return Array.from(mapa.values());
+    });
+  }
+
+  function limparHistoricoEdicoesAplicadas() {
+    if (
+      atualizacoesAplicadasLog.length > 0 &&
+      !window.confirm(
+        `Deseja limpar a lista de ${atualizacoesAplicadasLog.length} alteração(ões) editada(s) para impressão?`
+      )
+    ) {
+      return;
+    }
+    setAtualizacoesAplicadasLog([]);
+    try {
+      sessionStorage.removeItem(SESSION_EDICOES_APLICADAS_PILOTO);
+    } catch {}
+  }
+
+  function imprimirAlteracoesEditadas() {
+    if (!atualizacoesAplicadasLog.length) {
+      alert('Nenhuma alteração foi aplicada ainda nesta sessão para imprimir.');
+      return;
+    }
+
+    const gruposMap = new Map<
+      string,
+      {
+        turmaExibicao: string;
+        planilhaNome: string;
+        professora?: string;
+        itens: RegistroEdicaoPilotoAplicada[];
+      }
+    >();
+
+    for (const item of atualizacoesAplicadasLog) {
+      const chaveGrupo = item.turmaExibicao || item.planilhaNome || 'Sem Turma';
+      if (!gruposMap.has(chaveGrupo)) {
+        gruposMap.set(chaveGrupo, {
+          turmaExibicao: item.turmaExibicao,
+          planilhaNome: item.planilhaNome,
+          professora: item.professora,
+          itens: []
+        });
+      }
+      gruposMap.get(chaveGrupo)!.itens.push(item);
+    }
+
+    const grupos = Array.from(gruposMap.values()).sort((a, b) =>
+      a.turmaExibicao.localeCompare(b.turmaExibicao, 'pt-BR')
+    );
+
+    const agora = new Date().toLocaleString('pt-BR');
+    const rotuloTipo = (tipo: string) => {
+      if (tipo === 'NOVO_ALUNO') return 'ALUNO NOVO';
+      if (tipo === 'NOVA_MOVIMENTACAO' || tipo === 'ALTERACAO_SITUACAO') return 'MOVIMENTAÇÃO';
+      if (tipo === 'DIVERGENCIA_DADOS') return 'DIVERGÊNCIA / RA';
+      return 'EDIÇÃO MANUAL';
+    };
+
+    const blocosHtml = grupos
+      .map((grupo) => {
+        const linhasHtml = grupo.itens
+          .slice()
+          .sort((a, b) => (a.nr || 999) - (b.nr || 999) || a.nome.localeCompare(b.nome, 'pt-BR'))
+          .map(
+            (it) => `
+              <tr>
+                <td class="num">${it.nr || '—'}</td>
+                <td>
+                  <div class="nome">${escaparHtmlPrint(it.nome)}</div>
+                  ${
+                    it.dataNascimentoDepois
+                      ? `<div class="sub">Nasc.: ${escaparHtmlPrint(it.dataNascimentoDepois)}</div>`
+                      : ''
+                  }
+                </td>
+                <td><span class="badge">${escaparHtmlPrint(rotuloTipo(it.tipo))}</span></td>
+                <td>${formatarAntesDepoisHtml(it.rmAntes, it.rmDepois)}</td>
+                <td>${formatarAntesDepoisHtml(it.situacaoAntes, it.situacaoDepois)}</td>
+                <td>${formatarAntesDepoisHtml(it.dataMovAntes, it.dataMovDepois)}</td>
+                <td>${formatarAntesDepoisHtml(it.raAntes, it.raDepois)}</td>
+                <td>${formatarAntesDepoisHtml(it.imAntes, it.imDepois)}</td>
+                <td class="obs">${formatarAntesDepoisHtml(it.obsAntes, it.obsDepois)}</td>
+                <td class="hora">${escaparHtmlPrint(it.aplicadoEm)}</td>
+              </tr>`
+          )
+          .join('');
+
+        return `
+          <section class="turma-bloco">
+            <div class="turma-header">
+              <div>
+                <strong>${escaparHtmlPrint(grupo.turmaExibicao)}</strong>
+                ${
+                  grupo.planilhaNome
+                    ? `<span class="meta"> &bull; Planilha: ${escaparHtmlPrint(grupo.planilhaNome)}</span>`
+                    : ''
+                }
+                ${
+                  grupo.professora
+                    ? `<span class="meta"> &bull; Profª: ${escaparHtmlPrint(grupo.professora)}</span>`
+                    : ''
+                }
+              </div>
+              <span class="qtd">${grupo.itens.length} alteração(ões)</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:36px;">N°</th>
+                  <th style="width:20%;">Aluno</th>
+                  <th style="width:11%;">Tipo</th>
+                  <th style="width:7%;">RM</th>
+                  <th style="width:10%;">Situação</th>
+                  <th style="width:8%;">Data Mov.</th>
+                  <th style="width:11%;">RA</th>
+                  <th style="width:6%;">IM</th>
+                  <th>Observações</th>
+                  <th style="width:76px;">Aplicado em</th>
+                </tr>
+              </thead>
+              <tbody>${linhasHtml}</tbody>
+            </table>
+          </section>`;
+      })
+      .join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Alterações Aplicadas nas Listas Piloto</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; font-size: 11px; }
+    .doc-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #1e293b; padding-bottom: 8px; margin-bottom: 12px; }
+    .doc-title { font-size: 16px; font-weight: 800; margin: 0; color: #0f172a; }
+    .doc-sub { font-size: 11px; color: #475569; margin-top: 3px; }
+    .doc-stats { text-align: right; font-size: 11px; color: #334155; }
+    .turma-bloco { margin-bottom: 14px; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; break-inside: avoid; }
+    .turma-header { background: #f1f5f9; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; font-size: 12px; }
+    .turma-header .meta { font-weight: 400; color: #475569; font-size: 11px; }
+    .turma-header .qtd { font-weight: 700; font-size: 10px; background: #e2e8f0; padding: 2px 7px; border-radius: 999px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; padding: 5px 6px; text-align: left; vertical-align: top; }
+    th:last-child, td:last-child { border-right: none; }
+    thead th { background: #f8fafc; font-size: 10px; text-transform: uppercase; color: #475569; border-top: none; }
+    .num { text-align: center; font-weight: 700; }
+    .nome { font-weight: 700; }
+    .sub { font-size: 10px; color: #64748b; margin-top: 2px; }
+    .badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 4px; background: #e0e7ff; color: #1e1b4b; }
+    .old { color: #64748b; text-decoration: line-through; font-size: 10px; }
+    .muted { color: #94a3b8; }
+    .obs { word-break: break-word; }
+    .hora { font-size: 10px; color: #475569; white-space: nowrap; }
+    .doc-footer { margin-top: 16px; display: flex; justify-content: space-between; font-size: 10px; color: #475569; border-top: 1px dashed #cbd5e1; padding-top: 8px; }
+  </style>
+</head>
+<body>
+  <header class="doc-header">
+    <div>
+      <h1 class="doc-title">Relatório de Alterações Aplicadas — Listas Piloto</h1>
+      <div class="doc-sub">
+        ${pastaNome ? `Pasta Drive: <strong>${escaparHtmlPrint(pastaNome)}</strong> &bull; ` : ''}
+        Registros atualizados e gravados nas planilhas oficiais
+      </div>
+    </div>
+    <div class="doc-stats">
+      <div><strong>${atualizacoesAplicadasLog.length}</strong> registro(s) em <strong>${grupos.length}</strong> turma(s)</div>
+      <div>Impresso em: ${escaparHtmlPrint(agora)}</div>
+    </div>
+  </header>
+  ${blocosHtml}
+  <footer class="doc-footer">
+    <span>Sistema SBF / Gestão de Listas Piloto</span>
+    <span>Conferido em: ____/____/______ &nbsp;&nbsp; Responsável: ________________________________________</span>
+  </footer>
+</body>
+</html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (doc && iframe.contentWindow) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+      const remover = () => {
+        setTimeout(() => {
+          if (iframe.parentNode) {
+            iframe.parentNode.removeChild(iframe);
+          }
+        }, 500);
+      };
+      iframe.contentWindow.addEventListener('afterprint', remover, { once: true });
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(remover, 60000);
+      }, 150);
+    } else {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+      const win = window.open('', '_blank', 'width=1024,height=760');
+      if (win) {
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
+        win.focus();
+        win.print();
+      } else {
+        alert('Não foi possível abrir a janela de impressão neste navegador.');
+      }
+    }
+  }
+
   async function salvarAtualizacoesDaSalaNoSheets(comp: ComparacaoTurmaPiloto) {
     if (!comp.turmaPiloto || !comp.turmaPiloto.planilhaId) {
       alert(
@@ -651,6 +978,42 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
         throw new Error(resp.erros.join('\n'));
       }
 
+      const horarioAgora = new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const nomeTurma = obterNomeTurmaDaPlanilha(
+        comp.turmaPiloto.planilhaNome || comp.nomeExibicao
+      );
+      registrarEdicoesAplicadasNoHistorico(
+        selecionadas.map((m) => ({
+          id: `${comp.idComparacao}-${m.id}-${Date.now()}`,
+          chaveUnica: `${nomeTurma}::${m.nr}::${normalizarNomeAluno(m.nome)}`,
+          aplicadoEm: horarioAgora,
+          origem: 'CONFERENCIA_SALA',
+          turmaExibicao: nomeTurma,
+          planilhaNome: comp.turmaPiloto?.planilhaNome || comp.nomeExibicao,
+          professora: comp.turmaPiloto?.professora || '',
+          tipo: m.tipo,
+          nr: m.nr,
+          nome: m.nome,
+          rmAntes: m.rmAtual || '',
+          rmDepois: m.rmGravar || '',
+          situacaoAntes: m.situacaoAtual || '',
+          situacaoDepois: m.situacaoGravar || '',
+          dataMovAntes: m.dataMovAtual || '',
+          dataMovDepois: m.dataMovGravar || '',
+          raAntes: m.raAtual || '',
+          raDepois: m.raGravar || '',
+          dataNascimentoDepois: m.dataNascimentoGravar || '',
+          imAntes: m.imAtual || '',
+          imDepois: m.direitoImagemGravar || '',
+          obsAntes: m.obsAtual || '',
+          obsDepois: m.observacoesGravar || '',
+          descricaoMudanca: m.descricaoMudanca || ''
+        }))
+      );
+
       setMensagemSucesso(
         `Planilha "${comp.turmaPiloto.planilhaNome}" atualizada com sucesso no Google Sheets (${selecionadas.length} registro(s) aplicado(s))!`
       );
@@ -663,32 +1026,32 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
   }
 
   async function salvarTodasAsSalasPendentesNoSheets() {
-    const lotes = comparacoes
-      .filter(
-        (c) =>
-          c.turmaPiloto?.planilhaId &&
-          c.turmaPiloto.editavelNoSheets &&
-          c.mudancas.some((m) => m.selecionada)
-      )
-      .map((c) => ({
-        planilhaId: c.turmaPiloto!.planilhaId,
-        nomeAba: c.turmaPiloto!.nomeAba,
-        turmaExibicao: c.nomeExibicao,
-        mudancas: c.mudancas
-          .filter((m) => m.selecionada)
-          .map((m) => ({
-            linhaPlanilha: m.linhaPlanilha,
-            nr: m.nr,
-            nome: m.nome,
-            rm: m.rmGravar,
-            situacao: m.situacaoGravar,
-            dataMovimentacao: m.dataMovGravar,
-            dataNascimento: m.dataNascimentoGravar,
-            ra: m.raGravar,
-            direitoImagem: m.direitoImagemGravar,
-            observacoes: m.observacoesGravar
-          }))
-      }));
+    const compsSelecionadas = comparacoes.filter(
+      (c) =>
+        c.turmaPiloto?.planilhaId &&
+        c.turmaPiloto.editavelNoSheets &&
+        c.mudancas.some((m) => m.selecionada)
+    );
+
+    const lotes = compsSelecionadas.map((c) => ({
+      planilhaId: c.turmaPiloto!.planilhaId,
+      nomeAba: c.turmaPiloto!.nomeAba,
+      turmaExibicao: c.nomeExibicao,
+      mudancas: c.mudancas
+        .filter((m) => m.selecionada)
+        .map((m) => ({
+          linhaPlanilha: m.linhaPlanilha,
+          nr: m.nr,
+          nome: m.nome,
+          rm: m.rmGravar,
+          situacao: m.situacaoGravar,
+          dataMovimentacao: m.dataMovGravar,
+          dataNascimento: m.dataNascimentoGravar,
+          ra: m.raGravar,
+          direitoImagem: m.direitoImagemGravar,
+          observacoes: m.observacoesGravar
+        }))
+    }));
 
     if (!lotes.length) {
       alert('Nenhuma alteração pendente selecionada em planilhas do Google Sheets.');
@@ -704,6 +1067,45 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
       if (resp?.erros?.length) {
         alert('Algumas turmas apresentaram aviso:\n' + resp.erros.join('\n'));
       }
+
+      const horarioAgora = new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const registrosLote: RegistroEdicaoPilotoAplicada[] = [];
+      for (const c of compsSelecionadas) {
+        const nomeTurma = obterNomeTurmaDaPlanilha(c.turmaPiloto?.planilhaNome || c.nomeExibicao);
+        for (const m of c.mudancas.filter((x) => x.selecionada)) {
+          registrosLote.push({
+            id: `${c.idComparacao}-${m.id}-${Date.now()}`,
+            chaveUnica: `${nomeTurma}::${m.nr}::${normalizarNomeAluno(m.nome)}`,
+            aplicadoEm: horarioAgora,
+            origem: 'CONFERENCIA_LOTE',
+            turmaExibicao: nomeTurma,
+            planilhaNome: c.turmaPiloto?.planilhaNome || c.nomeExibicao,
+            professora: c.turmaPiloto?.professora || '',
+            tipo: m.tipo,
+            nr: m.nr,
+            nome: m.nome,
+            rmAntes: m.rmAtual || '',
+            rmDepois: m.rmGravar || '',
+            situacaoAntes: m.situacaoAtual || '',
+            situacaoDepois: m.situacaoGravar || '',
+            dataMovAntes: m.dataMovAtual || '',
+            dataMovDepois: m.dataMovGravar || '',
+            raAntes: m.raAtual || '',
+            raDepois: m.raGravar || '',
+            dataNascimentoDepois: m.dataNascimentoGravar || '',
+            imAntes: m.imAtual || '',
+            imDepois: m.direitoImagemGravar || '',
+            obsAntes: m.obsAtual || '',
+            obsDepois: m.observacoesGravar || '',
+            descricaoMudanca: m.descricaoMudanca || ''
+          });
+        }
+      }
+      registrarEdicoesAplicadasNoHistorico(registrosLote);
+
       setMensagemSucesso(
         `Atualização em lote concluída! ${lotes.length} Lista(s) Piloto atualizada(s) no Google Drive.`
       );
@@ -737,7 +1139,16 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
       dataNascimento: aluno.dataNascimento || '',
       ra: aluno.ra || '',
       direitoImagem: aluno.direitoImagem || '',
-      observacoes: aluno.observacoes || ''
+      observacoes: aluno.observacoes || '',
+      antes: {
+        rm: aluno.rm || '',
+        nome: aluno.nome || '',
+        situacao: aluno.situacao || '',
+        dataMovimentacao: aluno.dataMovimentacao || '',
+        ra: aluno.ra || '',
+        direitoImagem: aluno.direitoImagem || '',
+        observacoes: aluno.observacoes || ''
+      }
     });
   }
 
@@ -780,6 +1191,37 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
       if (resp?.erros?.length) {
         throw new Error(resp.erros.join('\n'));
       }
+
+      const horarioAgora = new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      registrarEdicoesAplicadasNoHistorico([
+        {
+          id: `EDICAO-${formEdicaoAluno.planilhaId}-${formEdicaoAluno.nr}-${Date.now()}`,
+          chaveUnica: `${formEdicaoAluno.turmaExibicao}::${formEdicaoAluno.nr}::${normalizarNomeAluno(formEdicaoAluno.nome)}`,
+          aplicadoEm: horarioAgora,
+          origem: 'EDICAO_DIRETA',
+          turmaExibicao: formEdicaoAluno.turmaExibicao,
+          planilhaNome: formEdicaoAluno.turmaExibicao,
+          tipo: 'EDICAO_MANUAL',
+          nr: formEdicaoAluno.nr,
+          nome: formEdicaoAluno.nome,
+          rmAntes: formEdicaoAluno.antes?.rm || '',
+          rmDepois: formEdicaoAluno.rm || '',
+          situacaoAntes: formEdicaoAluno.antes?.situacao || '',
+          situacaoDepois: formEdicaoAluno.situacao || '',
+          dataMovAntes: formEdicaoAluno.antes?.dataMovimentacao || '',
+          dataMovDepois: formEdicaoAluno.dataMovimentacao || '',
+          raAntes: formEdicaoAluno.antes?.ra || '',
+          raDepois: formEdicaoAluno.ra || '',
+          dataNascimentoDepois: formEdicaoAluno.dataNascimento || '',
+          imAntes: formEdicaoAluno.antes?.direitoImagem || '',
+          imDepois: formEdicaoAluno.direitoImagem || '',
+          obsAntes: formEdicaoAluno.antes?.observacoes || '',
+          obsDepois: formEdicaoAluno.observacoes || ''
+        }
+      ]);
 
       setMensagemSucesso(
         `Dados do aluno "${formEdicaoAluno.nome}" atualizados com sucesso na Lista Piloto (${formEdicaoAluno.turmaExibicao})!`
@@ -1014,35 +1456,71 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
           </button>
         </div>
 
-        {resumo.totalSelecionadasParaGravar > 0 && (
-          <button
-            onClick={salvarTodasAsSalasPendentesNoSheets}
-            disabled={salvandoTodas}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition cursor-pointer disabled:opacity-50"
-          >
-            {salvandoTodas ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Save className="w-3.5 h-3.5" />
-            )}
-            Aplicar Todas as Mudanças no Drive ({resumo.totalSelecionadasParaGravar})
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {atualizacoesAplicadasLog.length > 0 && (
+            <div className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                onClick={imprimirAlteracoesEditadas}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition cursor-pointer"
+                title="Imprimir todas as alterações já aplicadas nas Listas Piloto nesta sessão"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Imprimir Editadas ({atualizacoesAplicadasLog.length})
+              </button>
+              <button
+                type="button"
+                onClick={limparHistoricoEdicoesAplicadas}
+                className="inline-flex items-center justify-center p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-700 transition cursor-pointer"
+                title="Limpar histórico de impressões acumuladas"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {resumo.totalSelecionadasParaGravar > 0 && (
+            <button
+              onClick={salvarTodasAsSalasPendentesNoSheets}
+              disabled={salvandoTodas}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition cursor-pointer disabled:opacity-50"
+            >
+              {salvandoTodas ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              Aplicar Todas as Mudanças no Drive ({resumo.totalSelecionadasParaGravar})
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Mensagem de sucesso após gravação */}
       {mensagemSucesso && (
-        <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-4 flex items-center justify-between text-emerald-900 shadow-sm">
+        <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 text-emerald-900 shadow-sm">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
             <span className="text-sm font-semibold">{mensagemSucesso}</span>
           </div>
-          <button
-            onClick={() => setMensagemSucesso('')}
-            className="text-emerald-700 hover:text-emerald-950 p-1"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {atualizacoesAplicadasLog.length > 0 && (
+              <button
+                type="button"
+                onClick={imprimirAlteracoesEditadas}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Imprimir Editadas ({atualizacoesAplicadasLog.length})
+              </button>
+            )}
+            <button
+              onClick={() => setMensagemSucesso('')}
+              className="text-emerald-700 hover:text-emerald-950 p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
