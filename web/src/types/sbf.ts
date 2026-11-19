@@ -244,3 +244,26 @@ export interface ComparacaoTurmaPiloto {
   mudancas: MudancaDetectadaPiloto[];
 }
 
+export interface ItemCapacidadeQuadroEscolar {
+  chaveTurma: string;
+  nomePlanilha: string;
+  turmaExibicao: string;
+  etapa: string;
+  turno: 'MANHA' | 'TARDE' | string;
+  capacidade: number;
+  atualizadoEm?: string;
+}
+
+export interface ResultadoQuadroEscolarConfig {
+  ok: boolean;
+  mensagem?: string;
+  escolaId?: string;
+  escolaNome?: string;
+  anoAtivo?: number;
+  bancoDadosId?: string;
+  bancoDadosUrl?: string;
+  total: number;
+  capacidades: Record<string, ItemCapacidadeQuadroEscolar>;
+  itens: ItemCapacidadeQuadroEscolar[];
+}
+

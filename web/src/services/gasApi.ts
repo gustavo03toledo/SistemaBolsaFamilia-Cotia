@@ -190,5 +190,10 @@ export const gasApi = {
         observacoes?: string;
       }>;
     }>;
-  }) => callGasApi('APLICAR_ATUALIZACOES_LISTA_PILOTO', dados)
+  }) => callGasApi('APLICAR_ATUALIZACOES_LISTA_PILOTO', dados),
+  obterQuadroEscolar: () =>
+    callGasApi<import('../types/sbf').ResultadoQuadroEscolarConfig>('OBTER_QUADRO_ESCOLAR'),
+  salvarQuadroEscolar: (dados: {
+    itens: import('../types/sbf').ItemCapacidadeQuadroEscolar[];
+  }) => callGasApi<import('../types/sbf').ResultadoQuadroEscolarConfig>('SALVAR_QUADRO_ESCOLAR', dados)
 };

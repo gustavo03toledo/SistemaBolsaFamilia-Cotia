@@ -14,6 +14,7 @@ import {
   FileText,
   Filter,
   FolderOpen,
+  Grid,
   HeartHandshake,
   Loader2,
   Plus,
@@ -42,6 +43,7 @@ import {
   TAGS_PADRAO_PILOTO
 } from '../services/configEscolarStore';
 import { gasApi } from '../services/gasApi';
+import { QuadroEscolarView } from './QuadroEscolarView';
 import {
   compararRelatorioSedComListasPiloto,
   extrairCodigoCanonicoTurma,
@@ -108,7 +110,12 @@ function formatarAntesDepoisHtml(antes: string | undefined, depois: string | und
   return `<span class="old">${escaparHtmlPrint(a)}</span> &rarr; <strong>${escaparHtmlPrint(d || '(vazio)')}</strong>`;
 }
 
-export type SubTabListaPilotoId = 'conferencia' | 'procurarAluno' | 'turmas' | 'config';
+export type SubTabListaPilotoId =
+  | 'conferencia'
+  | 'procurarAluno'
+  | 'turmas'
+  | 'quadroEscolar'
+  | 'config';
 
 export interface ListaPilotoHeaderState {
   pastaNome: string;
@@ -139,6 +146,8 @@ interface ListaPilotoSedViewProps {
   onTurmasPilotoLoaded?: (turmas: TurmaListaPilotoDrive[]) => void;
   dadosCicloBolsa?: any;
   vinculosBolsa?: VinculoAluno[];
+  escolaNome?: string;
+  anoReferencia?: number;
   onAbrirDeclaracaoAluno?: (
     tipo: 'matricula' | 'transferencia' | 'conclusao' | 'faltas',
     dadosAluno: {
@@ -205,6 +214,8 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
   onTurmasPilotoLoaded,
   dadosCicloBolsa,
   vinculosBolsa = [],
+  escolaNome,
+  anoReferencia,
   onAbrirDeclaracaoAluno
 }) => {
   const [internalSubTab, setInternalSubTab] = useState<SubTabListaPilotoId>(activeSubTab);
@@ -1441,6 +1452,18 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
           >
             <Users className="w-4 h-4" />
             Turmas & Planilhas no Drive ({turmasPiloto.length})
+          </button>
+
+          <button
+            onClick={() => setSubTab('quadroEscolar')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+              currentSubTab === 'quadroEscolar'
+                ? 'bg-[#1b365d] text-white shadow-xs'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <Grid className="w-4 h-4" />
+            QE - Quadro Escolar
           </button>
 
           <button
@@ -3283,6 +3306,23 @@ export const ListaPilotoSedView: React.FC<ListaPilotoSedViewProps> = ({
             </div>
           )}
         </div>
+      )}
+
+      {/* ====================================================================
+          SUB-ABA 3.5: QE - QUADRO ESCOLAR
+      ==================================================================== */}
+      {currentSubTab === 'quadroEscolar' && (
+        <QuadroEscolarView
+          turmasPiloto={turmasPiloto}
+          escolaNome={escolaNome}
+          anoReferencia={anoReferencia}
+          carregandoPiloto={carregandoPiloto}
+          onSincronizarDrive={() => carregarListasPilotoDoDrive(false)}
+          onSelecionarTurmaParaConsultar={(idUnico) => {
+            setTurmaSelecionadaConsulta(idUnico);
+            setSubTab('turmas');
+          }}
+        />
       )}
 
       {/* ====================================================================

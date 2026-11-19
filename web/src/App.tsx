@@ -25,7 +25,8 @@ import {
   Plus,
   RotateCcw,
   Zap,
-  FileText
+  FileText,
+  Grid
 } from 'lucide-react';
 import { gasApi, getGasDirectUrl, setGasDirectUrl } from './services/gasApi';
 import DeclaracaoFaltasView from './components/DeclaracaoFaltasView';
@@ -1501,6 +1502,21 @@ export default function App() {
                 <button
                   onClick={() => {
                     setActiveScreen('listaPiloto');
+                    setSubTabListaPiloto('quadroEscolar');
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    activeScreen === 'listaPiloto' && subTabListaPiloto === 'quadroEscolar'
+                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <Grid className="w-3.5 h-3.5" />
+                  QE - Quadro Escolar
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveScreen('listaPiloto');
                     setSubTabListaPiloto('config');
                   }}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
@@ -1635,14 +1651,32 @@ export default function App() {
                 Declarações
               </button>
               <button
-                onClick={() => selecionarModuloPrincipal('listaPiloto')}
+                onClick={() => {
+                  selecionarModuloPrincipal('listaPiloto');
+                  if (subTabListaPiloto === 'quadroEscolar') {
+                    setSubTabListaPiloto('conferencia');
+                  }
+                }}
                 className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  activeModule === 'listaPiloto'
+                  activeModule === 'listaPiloto' && subTabListaPiloto !== 'quadroEscolar'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Lista Piloto
+              </button>
+              <button
+                onClick={() => {
+                  setActiveScreen('listaPiloto');
+                  setSubTabListaPiloto('quadroEscolar');
+                }}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  activeModule === 'listaPiloto' && subTabListaPiloto === 'quadroEscolar'
+                    ? 'bg-[#1b365d] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                QE - Quadro Escolar
               </button>
             </div>
 
@@ -3724,6 +3758,8 @@ export default function App() {
               onTurmasPilotoLoaded={setTurmasPilotoGlobal}
               dadosCicloBolsa={dadosCiclo}
               vinculosBolsa={vinculos}
+              escolaNome={escolaAtiva?.nome || ''}
+              anoReferencia={anoReferencia}
               onAbrirDeclaracaoAluno={(tipo, dadosAluno) => {
                 if (tipo === 'faltas') {
                   if (dadosAluno.ra) {
