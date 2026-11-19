@@ -303,6 +303,10 @@ export default function App() {
   const [manterVinculosZerar, setManterVinculosZerar] = useState<boolean>(true);
   const [manterDiariosZerar, setManterDiariosZerar] = useState<boolean>(false);
   const [arquivarBackupZerar, setArquivarBackupZerar] = useState<boolean>(true);
+  const [manualBancoIdInput, setManualBancoIdInput] = useState<string>('');
+  const [manualPastaAnoIdInput, setManualPastaAnoIdInput] = useState<string>('');
+  const [manualPastaEscolaIdInput, setManualPastaEscolaIdInput] = useState<string>('');
+  const [manualPastaSaidaIdInput, setManualPastaSaidaIdInput] = useState<string>('');
   const [alunoDeclaracaoInicial, setAlunoDeclaracaoInicial] = useState<{
     nome: string;
     turma: string;
@@ -318,6 +322,10 @@ export default function App() {
     if (cfg) {
       setConfig(cfg);
       setPastaDiariosInput(cfg.pastaDiariosId || '');
+      setManualBancoIdInput(cfg.infoAnoAtivo?.bancoDadosId || '');
+      setManualPastaAnoIdInput(cfg.infoAnoAtivo?.pastaAnoId || '');
+      setManualPastaEscolaIdInput(cfg.escolaAtiva?.pastaEscolaId || '');
+      setManualPastaSaidaIdInput(cfg.pastaSaidaDadosId || '');
       if (cfg.anoAtivo || cfg.anoAtual) {
         setAnoReferencia(Number(cfg.anoAtivo || cfg.anoAtual));
       }
@@ -493,6 +501,43 @@ export default function App() {
       await carregarInicial(true);
     } catch (err: any) {
       setErrorMessage(err?.message || 'Falha ao alternar ano letivo.');
+    } finally {
+      setBusyMessage('');
+    }
+  }
+
+  async function handleVincularIdsManuais() {
+    if (
+      !manualBancoIdInput.trim() &&
+      !manualPastaAnoIdInput.trim() &&
+      !manualPastaEscolaIdInput.trim() &&
+      !manualPastaSaidaIdInput.trim()
+    ) {
+      setErrorMessage(
+        'Informe ao menos um ID ou link (Banco de Dados, Pasta do Ano ou Pasta da Escola).'
+      );
+      return;
+    }
+
+    setBusyMessage('Validando acesso e vinculando IDs de Banco de Dados e Pastas...');
+    setErrorMessage('');
+    setSuccessBanner('');
+    try {
+      const res = await gasApi.vincularIdsBancoEPastas({
+        bancoDadosId: manualBancoIdInput.trim(),
+        pastaAnoId: manualPastaAnoIdInput.trim(),
+        pastaEscolaId: manualPastaEscolaIdInput.trim(),
+        pastaSaidaDadosId: manualPastaSaidaIdInput.trim(),
+        anoReferencia
+      });
+      sessionStorage.clear();
+      if (res?.config) {
+        setConfig(res.config);
+      }
+      setSuccessBanner(res?.mensagem || 'IDs vinculados com sucesso! Recarregando dados...');
+      await carregarInicial(true);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Falha ao vincular IDs de banco de dados e pastas.');
     } finally {
       setBusyMessage('');
     }
@@ -3841,6 +3886,123 @@ export default function App() {
                       Salvar Novo Nome da Escola Atual
                     </button>
                   </div>
+                </div>
+              </div>
+
+              {/* 1.5 VINCULAR IDS MANUAIS (BANCO DE DADOS, PASTA DO ANO E PASTA DA ESCOLA) */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+                <div className="border-b border-slate-100 pb-4">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800">
+                    <Link2 className="w-3.5 h-3.5" />
+                    Reaproveitamento / Vinculação Manual no Google Drive
+                  </span>
+                  <h2 className="text-lg font-bold mt-1">
+                    Vincular IDs do Banco de Dados, Pasta do Ano e Pasta da Escola
+                  </h2>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Cole o <strong>ID ou link completo</strong> do Google Sheets / Google Drive para
+                    conectar a escola ativa (<code>{escolaAtiva?.nome || 'Escola Ativa'}</code>) e o
+                    ano (<code>{anoReferencia}</code>) a um banco de dados e pastas já existentes.
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2.5 text-[11px] text-amber-900 space-y-1">
+                  <p className="font-bold">Dica para reaproveitar dados em uma API clonada:</p>
+                  <p>
+                    Se a planilha do Banco de Dados ou as pastas pertencem a outra conta Google,
+                    lembre-se de compartilhá-las como <strong>Editor</strong> com o e-mail da conta
+                    dona desta API (ou copiar a planilha para o Drive desta conta e colar o novo ID
+                    abaixo).
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+                      ID ou Link do Banco de Dados (Google Sheets)
+                    </label>
+                    <input
+                      type="text"
+                      value={manualBancoIdInput}
+                      onChange={(e) => setManualBancoIdInput(e.target.value)}
+                      placeholder="Ex.: 1AbC... ou https://docs.google.com/spreadsheets/d/..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono bg-white"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1 truncate">
+                      Atual:{' '}
+                      <code>{config?.infoAnoAtivo?.bancoDadosId || 'Ainda não vinculado'}</code>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-indigo-700" />
+                      ID ou Link da Pasta do Ano ({anoReferencia})
+                    </label>
+                    <input
+                      type="text"
+                      value={manualPastaAnoIdInput}
+                      onChange={(e) => setManualPastaAnoIdInput(e.target.value)}
+                      placeholder="Ex.: 1XyZ... ou https://drive.google.com/drive/folders/..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono bg-white"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1 truncate">
+                      Atual:{' '}
+                      <code>{config?.infoAnoAtivo?.pastaAnoId || 'Ainda não vinculada'}</code>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <School className="w-3.5 h-3.5 text-sky-700" />
+                      ID ou Link da Pasta da Escola
+                    </label>
+                    <input
+                      type="text"
+                      value={manualPastaEscolaIdInput}
+                      onChange={(e) => setManualPastaEscolaIdInput(e.target.value)}
+                      placeholder="Ex.: 1PqR... ou https://drive.google.com/drive/folders/..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono bg-white"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1 truncate">
+                      Atual:{' '}
+                      <code>{config?.escolaAtiva?.pastaEscolaId || 'Ainda não vinculada'}</code>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                      <FolderOpen className="w-3.5 h-3.5 text-slate-700" />
+                      ID ou Link da Pasta Raiz de Saída (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={manualPastaSaidaIdInput}
+                      onChange={(e) => setManualPastaSaidaIdInput(e.target.value)}
+                      placeholder="Opcional: pasta raiz geral dos dados"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-mono bg-white"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1 truncate">
+                      Atual:{' '}
+                      <code>{config?.pastaSaidaDadosId || 'Ainda não vinculada'}</code>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleVincularIdsManuais}
+                    disabled={!!busyMessage}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold disabled:opacity-50 transition"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Vincular IDs e Carregar Banco de Dados
+                  </button>
+                  <span className="text-[11px] text-slate-500">
+                    Ao salvar, o sistema valida as permissões e recarrega todos os ciclos e listas.
+                  </span>
                 </div>
               </div>
 

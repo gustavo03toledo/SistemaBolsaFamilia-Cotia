@@ -148,6 +148,14 @@ export const gasApi = {
     manterDiariosIndexados?: boolean;
     arquivarBackup?: boolean;
   }) => callGasApi('ZERAR_ANO_LETIVO_CICLOS', dados),
+  vincularIdsBancoEPastas: (dados: {
+    bancoDadosId?: string;
+    pastaAnoId?: string;
+    pastaEscolaId?: string;
+    pastaSaidaDadosId?: string;
+    pastaDiariosId?: string;
+    anoReferencia?: number;
+  }) => callGasApi('VINCULAR_IDS_BANCO_E_PASTAS', dados),
   aprovarLista: (dados: Record<string, any>) =>
     callGasApi('APROVAR_LISTA', dados),
   limparBanco: (operacaoId: string) =>
